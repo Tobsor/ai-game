@@ -1,0 +1,5 @@
+chromadb
+dotenv
+neo4j
+ollama
+keyboard

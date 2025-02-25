@@ -1,2 +1,4 @@
 **.csv
 **/.env
+faction_db/**
+data/**
