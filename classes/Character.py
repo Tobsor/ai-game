@@ -12,8 +12,12 @@ annotation_mapping = {
     "intelligence": "Intelligence"
 }
 
+no_change = "No sentiment change"
+end_keyword = "END"
+continue_keyword = "CONTINUE"
+
 class Character:
-    def __init__(self, name, faction, context=""):
+    def __init__(self, name, faction, context="", sentiment=""):
         self.name = name
         self.faction = faction
         self.id = str(name) + str(faction)
@@ -42,25 +46,43 @@ class Character:
                 }
             ]
         }
-
+        self.context = context
         self.system_prompt = f"""
-        You impersonate a character in a fantasy world. Please use this context to impersonate the character the best:
-
-        You are {name}. {context}
+        Enter RP mode. You shall reply to the protagnoist, a red panda, while staying in character. Your responses must be detailed, creative, immersive, and drive the scenario forward. You will follow {name}'s persona as follows:
+        {context}
         """
+
+        self.db.init_context(self.system_prompt)
+        self.current_sentiment = sentiment
+
+    # def create_answer_prompt(self, prompt, context):
+    #     return f"""
+    #     Always answer alligned with the character description provided in the first system prompt! Consider the following context for this specific prompt:
+
+    #     {context}
+
+    #     Your current sentiment towards the player is the following:
+    #     {self.current_sentiment}
+
+    #     Give an answer in the following format
+
+    #     [Characters answer]|[Sentiment change]|[End]
+
+    #     Characters answer: Answer {prompt}, only stating the spoken word
+    #     Sentiment change: Evaluate the emotional reaction of the character towards the players prompt and summarize an eventual sentiment change **in 10 words or fewer** or default to {no_change}
+    #     End: Decide if the character is willing to end the discussion with the player. If he does, add {end_keyword} here, else {continue_keyword}
+    #     """
 
     def create_answer_prompt(self, prompt, context):
         return f"""
-        {self.system_prompt}
+        <|system|>Enter RP mode. Pretend to be {self.name} whose persona follows:
 
-        Consider the following context for this specific prompt:        
+        Current sentiment towards the player: {self.current_sentiment}
+        Context towards user prompt: {context}
 
-        {context}
-
-        Now, answer the following user query:
-        {prompt}
-
-        Also, please make a short summary how the character now feels about the player or a change of sentiment after the given prompt. Only do so if it has impact on the further conversation and attach it after a |
+        You shall reply to the user while staying in character, and generate long responses.
+        <|user|>{prompt}
+        <|model|>{{model's response goes here}}
         """
 
     def create_prefix(self, category):
@@ -90,15 +112,19 @@ class Character:
 
     def prompt(self, prompt):
         if(prompt.strip() == ""):
-            return "What did you say?"        
+            return "", True
         
         context = self.db.query_docs(prompt=prompt, filter=self.query, concat=True)
         final_prompt = self.create_answer_prompt(prompt, context)
 
         response = self.db.generate_text(final_prompt)
 
-        message, sentiment_change = response.split("|")
+        # message, sentiment_change, end = response.split("|")
 
-        print("sentiment_change ==> " + sentiment_change)
+        # if sentiment_change.strip() != no_change:
+        #     self.current_sentiment = sentiment_change
 
-        return message
+        # print("sentiment_change ==> " + sentiment_change)
+
+        return response
+        

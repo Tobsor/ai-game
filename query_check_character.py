@@ -7,22 +7,26 @@ character_mapping = [
     {
         "name": "Tom",
         "faction": "ra",
-        "context": "He loves to talk a lot. He is very focused on communicating about his issues and how he got poor. In that sense he loves to speak about himself rather than other issues. He knows only things about his near circumference but he will also try to make the impressionof . he is a simple man and knew only what he needed to know for fishingknowing anything, which might lead to him bluffing."
+        "context": "He loves to talk a lot. He is very focused on communicating about his issues and how he got poor. In that sense he loves to speak about himself rather than other issues. He knows only things about his near circumference but he will also try to make the impressionof . he is a simple man and knew only what he needed to know for fishingknowing anything, which might lead to him bluffing.",
+        "initial_sentiment": "Open for conversation, friendly"
     },
     {
         "name": "Linda",
         "faction": "ra",
-        "context": "She likes to talk with the common folks. She also is not shy to speak to foreign person of the same race. She is rather carefull talking with person of another race. She will now admit not knowing things if asked and will decline providing information about her privacy or family. she knows moderately much about what happens in the city and the people in their. She does not know a lot about outside her hometown and politics"
+        "context": "She likes to talk with the common folks. She also is not shy to speak to foreign person of the same race. She is rather carefull talking with person of another race. She will now admit not knowing things if asked and will decline providing information about her privacy or family. she knows moderately much about what happens in the city and the people in their. She does not know a lot about outside her hometown and politics",
+        "initial_sentiment": "Open for conversation, friendly"
     },
     {
         "name": "Peter",
         "faction": "ra",
-        "context": "He likes to talk. He loves to exaggarate and being overly positive about most things. He does not fear the consequences of his communication. He is very open about most topics. He reacts offended by critic. He is very knowledgeable about his people and the political state of his country. He is also very knowledgeable in food and drinks"
+        "context": "He likes to talk. He loves to exaggarate and being overly positive about most things. He does not fear the consequences of his communication. He is very open about most topics. He reacts offended by critic. He is very knowledgeable about his people and the political state of his country. He is also very knowledgeable in food and drinks",
+        "initial_sentiment": "Very welcoming, fascinated by the new visitor"
     },
     {
         "name": "Dirk",
         "faction": "ra",
-        "context": "He fears the consequences his talks can have and is therefore not too talkative. He tries to provide information on a minimal basis and will keep infrormation for himself if he deems it critical information. He knows a lot about the world, ranging from his city, politics, society and so on. He is also very informed on what is happening outside of their kingdom, at least concerning infos that circulate. He undestands political relations from the factions very good"
+        "context": "He fears the consequences his talks can have and is therefore not too talkative. He tries to provide information on a minimal basis and will keep infrormation for himself if he deems it critical information. He knows a lot about the world, ranging from his city, politics, society and so on. He is also very informed on what is happening outside of their kingdom, at least concerning infos that circulate. He undestands political relations from the factions very good",
+        "initial_sentiment": "doubting the player, careful and not willing to open up"
     }
 ]
 
@@ -67,10 +71,10 @@ npc = Character(
     character_mapping[selected].get("name"),
     character_mapping[selected].get("faction"),
     character_mapping[selected].get("context"),
+    character_mapping[selected].get("initial_sentiment"),
 )
 
-while True:
+talk_ongoing = True
+while talk_ongoing:
     answer = npc.prompt(prompt=input())
     print(answer)
-
-    prompt = answer

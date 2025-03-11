@@ -3,3 +3,4 @@ dotenv
 neo4j
 ollama
 keyboard
+vllm

@@ -1,5 +1,8 @@
 import ollama
 import chromadb
+# from vllm import LLM, SamplingParams
+
+model_name = "PygmalionAI/mythalion-13b"
 
 class ChromaDBHelper:
     _instance = None
@@ -16,10 +19,15 @@ class ChromaDBHelper:
             self.model = "nomic-embed-text"
             self._initialized = True
             self.messages = []
+            # self.sampling_params = SamplingParams(temperature=0.7, max_tokens=256)
+            # self.llm = LLM(model=model_name)
 
     def get_embedding(self, text):
         response = ollama.embeddings(model="mxbai-embed-large", prompt=text)
         return response['embedding']
+    
+    def init_context(self, context):
+        self.messages.append({"role": "system", "content": context})
     
     def add_embedding(self, id, text, metadata):
         
@@ -52,8 +60,8 @@ class ChromaDBHelper:
         new_message = {"role": "user", "content": prompt}
         self.messages.append(new_message)
 
-        res = ollama.chat(model="mistral", messages=self.messages)
+        res = ollama.chat(model="vthebeast/mythalion-13b", messages=self.messages)
 
         self.messages.append(res["message"])
-        
+
         return res["message"]["content"]
