@@ -2,6 +2,7 @@ from classes.ChromaDBHelper import ChromaDBHelper
 
 annotation_mapping = {
     "job": "Job",
+    "hook": "Hook",
     "past": "Past / Background",
     "loyalty": "Loyalty / Trustworthy",
     "helping": "Helping attitude",
@@ -17,17 +18,18 @@ end_keyword = "END"
 continue_keyword = "CONTINUE"
 
 class Character:
-    def __init__(self, name, faction, context="", sentiment=""):
-        self.name = name
-        self.faction = faction
-        self.id = str(name) + str(faction)
+    def __init__(self, char_data, situation):
+        self.name = char_data.name
+        self.faction = char_data.faction
+        self.id = char_data.name + char_data.faction
+        self.situation = situation
         self.db = ChromaDBHelper()
         self.query = {
             "$or": [
                 {
                     "$and" : [
                         {
-                            "name": name,
+                            "name": char_data.name,
                         },
                         {
                             "type": "character"
@@ -37,7 +39,7 @@ class Character:
                 {
                     "$and" : [
                         {
-                            "faction": faction,
+                            "faction": char_data.faction,
                         },
                         {
                             "type": "faction"
@@ -46,41 +48,33 @@ class Character:
                 }
             ]
         }
-        self.context = context
+        self.pl_list = char_data.pl_list
+        self.speech = char_data.speech
+        self.hook = char_data.hook
+        self.greeting = char_data.greeting
         self.system_prompt = f"""
-        Enter RP mode. You shall reply to the protagnoist, a red panda, while staying in character. Your responses must be detailed, creative, immersive, and drive the scenario forward. You will follow {name}'s persona as follows:
-        {context}
+        Enter RP mode. You shall reply to the protagnoist, a red panda, while staying in character. Your responses must be detailed, creative, immersive, and drive the scenario forward. You will follow {name}:
+        {char_data.pl_list}
+        Hook/Motivation: {char_data.hook}
+        Speech style: {char_data.speech}
         """
 
         self.db.init_context(self.system_prompt)
-        self.current_sentiment = sentiment
 
-    # def create_answer_prompt(self, prompt, context):
-    #     return f"""
-    #     Always answer alligned with the character description provided in the first system prompt! Consider the following context for this specific prompt:
-
-    #     {context}
-
-    #     Your current sentiment towards the player is the following:
-    #     {self.current_sentiment}
-
-    #     Give an answer in the following format
-
-    #     [Characters answer]|[Sentiment change]|[End]
-
-    #     Characters answer: Answer {prompt}, only stating the spoken word
-    #     Sentiment change: Evaluate the emotional reaction of the character towards the players prompt and summarize an eventual sentiment change **in 10 words or fewer** or default to {no_change}
-    #     End: Decide if the character is willing to end the discussion with the player. If he does, add {end_keyword} here, else {continue_keyword}
-    #     """
-
-    def create_answer_prompt(self, prompt, context):
+    def create_answer_prompt(self, prompt, example, sentiment, context):
         return f"""
-        <|system|>Enter RP mode. Pretend to be {self.name} whose persona follows:
+        {self.system_prompt}
 
-        Current sentiment towards the player: {self.current_sentiment}
-        Context towards user prompt: {context}
+        Sentiment towards player:
+        {sentiment}
 
-        You shall reply to the user while staying in character, and generate long responses.
+        Example conversion:
+        {example}
+
+        General context:
+        {context}
+
+        You shall reply to the user while staying in character.
         <|user|>{prompt}
         <|model|>{{model's response goes here}}
         """
@@ -110,21 +104,93 @@ class Character:
             {"faction": self.faction, "type": "character", "category": attr.get("category"), "name": self.name}
         )
 
+    def get_example(self, prompt):
+        filter = {
+            "$and" : [
+                {
+                    "char_name": self.name,
+                },
+                {
+                    "type": "example"
+                }
+            ]
+        }
+
+        return self.db.query_docs(prompt=prompt, filter=filter, concat=True)
+    
+    def get_sentiment(self, prompt):
+        filter = {
+            "$and" : [
+                {
+                    "char_name": self.name,
+                },
+                {
+                    "type": "sentiment"
+                }
+            ]
+        }
+
+        return self.db.query_docs(prompt=prompt, filter=filter, concat=True)
+    
+    def get_context(self, prompt):
+        filter = {
+            "$or": [
+                {
+                    "$and" : [
+                        {
+                            "char_name": self.name,
+                        },
+                        {
+                            "$or": [
+                                {
+                                    "type": "relations"
+                                },
+                                {
+                                    "type": "memory"
+                                },
+                                {
+                                    "$and": [
+                                        {
+                                            "type": "relations"
+                                        },
+                                        {
+                                            "char_name": self.name
+                                        }
+                                    ]
+                                },
+                                {
+                                    "$and": [
+                                        {
+                                            "type": "faction"
+                                        },
+                                        {
+                                            "name": self.faction
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                    ],
+                },
+                {
+                    "type": "world"
+                }
+            ]
+        }
+
+        return self.db.query_docs(prompt=prompt, filter=filter, concat=True)
+
     def prompt(self, prompt):
         if(prompt.strip() == ""):
             return "", True
         
-        context = self.db.query_docs(prompt=prompt, filter=self.query, concat=True)
-        final_prompt = self.create_answer_prompt(prompt, context)
+        example = self.get_example(prompt)
+        sentiment = self.get_sentiment(prompt)
+        context = self.get_context(prompt)
+
+        final_prompt = self.create_answer_prompt(prompt, example, sentiment, context)
 
         response = self.db.generate_text(final_prompt)
-
-        # message, sentiment_change, end = response.split("|")
-
-        # if sentiment_change.strip() != no_change:
-        #     self.current_sentiment = sentiment_change
-
-        # print("sentiment_change ==> " + sentiment_change)
 
         return response
         
