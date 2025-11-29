@@ -4,6 +4,7 @@ from classes.Character import Character
 
 selected = 0
 all_characters = []
+situation="{{user}} enters the village of Rack and stumbles upon {{char}}. {{char}} initiates the contact to {{user}}"
 
 def show_menu():
     global selected
@@ -49,7 +50,7 @@ while loop:
 keyboard.remove_hotkey("up")
 keyboard.remove_hotkey("down")
 
-npc = Character(all_characters[selected])
+npc = Character(all_characters[selected], situation)
 
 talk_ongoing = True
 while talk_ongoing:

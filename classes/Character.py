@@ -13,83 +13,40 @@ annotation_mapping = {
     "intelligence": "Intelligence"
 }
 
-no_change = "No sentiment change"
-end_keyword = "END"
-continue_keyword = "CONTINUE"
-
 class Character:
     def __init__(self, char_data, situation):
-        self.name = char_data.name
-        self.faction = char_data.faction
-        self.id = char_data.name + char_data.faction
+        print(char_data)
+        self.name = char_data.get("name")
+        self.faction = char_data.get("faction")
+        self.id = char_data.get("name") + char_data.get("faction")
+        self.pl_list = char_data.get("pl_list")
+        self.ali_chat = char_data.get("ali_chat")
         self.situation = situation
         self.db = ChromaDBHelper()
-        self.query = {
-            "$or": [
-                {
-                    "$and" : [
-                        {
-                            "name": char_data.name,
-                        },
-                        {
-                            "type": "character"
-                        }
-                    ]
-                },
-                {
-                    "$and" : [
-                        {
-                            "faction": char_data.faction,
-                        },
-                        {
-                            "type": "faction"
-                        }
-                    ]
-                }
-            ]
-        }
-        self.pl_list = char_data.pl_list
-        self.speech = char_data.speech
-        self.hook = char_data.hook
-        self.greeting = char_data.greeting
-        self.system_prompt = f"""
-        Enter RP mode. You shall reply to the protagnoist, a red panda, while staying in character. Your responses must be detailed, creative, immersive, and drive the scenario forward. You will follow {name}:
-        {char_data.pl_list}
-        Hook/Motivation: {char_data.hook}
-        Speech style: {char_data.speech}
-        """
 
-        self.db.init_context(self.system_prompt)
-
-    def create_answer_prompt(self, prompt, example, sentiment, context):
+    def create_answer_prompt(self, prompt, sentiment, context):
         return f"""
-        {self.system_prompt}
+            Enter RP mode. You are {self.name}. Stay in character at all times, speaking in first person as {self.name}:
 
-        Sentiment towards player:
-        {sentiment}
+            Situation:
+            {self.situation}
 
-        Example conversion:
-        {example}
+            General context:
+            {context}
 
-        General context:
-        {context}
+            Sentiment towards player:
+            {sentiment}
 
-        You shall reply to the user while staying in character.
-        <|user|>{prompt}
-        <|model|>{{model's response goes here}}
+            Follow this character definition:
+            {self.pl_list}
+
+            Example dialogues:
+            {self.ali_chat}
+
+            You shall reply to the user while staying in character.
+            <|user|>{prompt}
+            <|model|>{{model's response goes here}}
         """
-
-    def create_prefix(self, category):
-        return "[Faction: " + self.faction + ", Name: "+ self.name + ", category: " + annotation_mapping.get(category) + "]: "
-    
-    def map_data_obj_creation(self, value, category):
-        return list(map(lambda x: {"value": x[1], "category": category, "id": str(self.id) + category + str(x[0])}, enumerate(value.split("."))))
-    
-    def add_attribute(self, key, value):
-        all_attr = self.map_data_obj_creation(value, key)
-
-        for attr in all_attr:
-            self.add_embedding(attr)
 
     def add_embedding(self, attr):
         if attr.get("value") == "":
@@ -103,20 +60,6 @@ class Character:
             label,
             {"faction": self.faction, "type": "character", "category": attr.get("category"), "name": self.name}
         )
-
-    def get_example(self, prompt):
-        filter = {
-            "$and" : [
-                {
-                    "char_name": self.name,
-                },
-                {
-                    "type": "example"
-                }
-            ]
-        }
-
-        return self.db.query_docs(prompt=prompt, filter=filter, concat=True)
     
     def get_sentiment(self, prompt):
         filter = {
@@ -132,63 +75,93 @@ class Character:
 
         return self.db.query_docs(prompt=prompt, filter=filter, concat=True)
     
-    def get_context(self, prompt):
+    def get_memories(self, prompt):
         filter = {
-            "$or": [
+            "$and" : [
                 {
-                    "$and" : [
-                        {
-                            "char_name": self.name,
-                        },
-                        {
-                            "$or": [
-                                {
-                                    "type": "relations"
-                                },
-                                {
-                                    "type": "memory"
-                                },
-                                {
-                                    "$and": [
-                                        {
-                                            "type": "relations"
-                                        },
-                                        {
-                                            "char_name": self.name
-                                        }
-                                    ]
-                                },
-                                {
-                                    "$and": [
-                                        {
-                                            "type": "faction"
-                                        },
-                                        {
-                                            "name": self.faction
-                                        }
-                                    ]
-                                }
-                            ]
-                        },
-                    ],
+                    "char_name": self.name,
                 },
                 {
-                    "type": "world"
+                    "type": "memory"
+                }
+            ]
+        }
+
+        return self.db.query_docs(prompt=prompt, filter=filter, concat=True)
+    
+    def get_past(self, prompt):
+        filter = {
+            "$and" : [
+                {
+                    "char_name": self.name,
+                },
+                {
+                    "type": "past"
+                }
+            ]
+        }
+
+        return self.db.query_docs(prompt=prompt, filter=filter, concat=True)
+    
+    def get_faction_knowledge(self, prompt):
+        filter = {
+            "$and" : [
+                {
+                    "faction": self.faction,
+                },
+                {
+                    "type": "lore"
                 }
             ]
         }
 
         return self.db.query_docs(prompt=prompt, filter=filter, concat=True)
 
+    def get_world_knowledge(self, prompt):
+        filter = {
+            "$and" : [
+                {
+                    "faction": "world",
+                },
+                {
+                    "type": "lore"
+                }
+            ]
+        }
+
+        return self.db.query_docs(prompt=prompt, filter=filter, concat=True)
+    
+    def get_relations(self, prompt):
+        filter = {
+            "$and" : [
+                {
+                    "char_name": self.name,
+                },
+                {
+                    "type": "relation"
+                }
+            ]
+        }
+
+        return self.db.query_docs(prompt=prompt, filter=filter, concat=True)
+    
+    def compute_context(self, past, memories, world_knowledge, faction_knowledge, relations):
+        return past
+        
     def prompt(self, prompt):
         if(prompt.strip() == ""):
             return "", True
         
-        example = self.get_example(prompt)
         sentiment = self.get_sentiment(prompt)
-        context = self.get_context(prompt)
+        past = self.get_past(prompt)
+        memories = self.get_memories(prompt)
+        world_knowledge = self.get_faction_knowledge(prompt)
+        faction_knowledge = self.get_world_knowledge(prompt)
+        relations = self.get_relations(prompt)
 
-        final_prompt = self.create_answer_prompt(prompt, example, sentiment, context)
+        context = self.compute_context(past, memories, world_knowledge, faction_knowledge, relations)
+
+        final_prompt = self.create_answer_prompt(prompt, sentiment, context)
 
         response = self.db.generate_text(final_prompt)
 
