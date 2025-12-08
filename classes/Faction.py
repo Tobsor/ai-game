@@ -18,7 +18,7 @@ class Faction:
         self.db = ChromaDBHelper()
 
     def create_prefix(self, category):
-        return "[Name: "+ self.name + ", category: " + annotation_mapping.get(category) + "]: "
+        return "[Name: "+ str(self.name) + ", category: " + str(annotation_mapping.get(category)) + "]: "
     
     def map_data_obj_creation(self, value, category):
         return list(map(

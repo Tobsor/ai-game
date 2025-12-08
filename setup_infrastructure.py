@@ -1,7 +1,5 @@
-from init_factions import init_factions
 from add_faction_embeddings import add_faction_embeddings
 from add_character_embeddings import add_character_embeddings
 
-# init_factions()
-# add_faction_embeddings()
+add_faction_embeddings()
 add_character_embeddings()

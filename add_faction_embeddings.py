@@ -1,35 +1,61 @@
-import os
-from dotenv import load_dotenv
-from neo4j import GraphDatabase
-from classes.Faction import Faction
+import csv
+from classes.ChromaDBHelper import ChromaDBHelper
+from models import FactionData, Faction, Metadata, MetadataType, MetadataCategory
 
-load_dotenv()
+db = ChromaDBHelper()
+chunk_size = 100
+overlap_size = 50
+fields_to_chunk: list[MetadataCategory] = [MetadataCategory.LORE]
 
-uri = os.getenv("NEO4J_URI")
-auth = (os.getenv("NEO4J_USERNAME"), os.getenv("NEO4J_PASSWORD"))
+def create_chunks(text: str, chunk_size: int, overlap_size: int):
+    words = text.split()
+    chunks = []
+    start = 0
+
+    while start < len(words):
+        end = start + chunk_size
+        chunks.append(' '.join(words[start:end]))
+        start += chunk_size - overlap_size
+
+    return chunks
+
+def create_id(index: int, faction: Faction, category: MetadataCategory):
+        return "f-" + faction.value + "_type-" + category.value + "-" + str(index)
+
+def add_embedding(index: int, value: str, faction: Faction, category: MetadataCategory):
+    if value == "":
+        return
+
+    annotation = create_id(index, faction, category)
+    metadata = Metadata(faction=faction, type=MetadataType.FACTION, category=category)
+
+    db.add_embedding(
+        annotation,
+        value,
+        metadata,
+    )
 
 def add_faction_embeddings():
-    with GraphDatabase.driver(uri, auth=auth) as driver:
-        driver.verify_connectivity()
-        print("Connection established.")
+    with open('./data/faction_data/faction_data.csv', mode ='r') as file:
+        csvFile = csv.DictReader(file, delimiter=';')
 
-        all_factions = driver.execute_query("""
-            MATCH (n) RETURN n.id as id, n.name as name, n.army_power as army_power, n.cooperative_rating as cooperative_rating, n.biological_properties as biological_properties, n.nature as nature, n.goal as goal,n.habital_area as habital_area, n.quantity as quantity, n.strengths as strengths, n.weakness as weakness
-        """)
+        print("retrieved faction data")
 
-        print("retrieved factions")
+        for faction in csvFile:
+            faction_data = FactionData(**faction) # type: ignore
 
-        for d in all_factions.records:
-            faction_data = d.data()
+            print("adding attributes for " + str(faction_data.faction))
 
-            new_faction = Faction(faction_data.get("id"), faction_data.get("name"))
-            
-            new_faction.add_attribute("biological_properties", faction_data.get("biological_properties"))
-            new_faction.add_attribute("nature", faction_data.get("nature"))
-            new_faction.add_attribute("strengths", faction_data.get("strengths"))
-            new_faction.add_attribute("weakness", faction_data.get("weakness"))
-            new_faction.add_attribute("goal", faction_data.get("goal"))
-            new_faction.add_attribute("habital_area", faction_data.get("habital_area"))
-            new_faction.add_attribute("quantity", faction_data.get("quantity"))
+            for field in fields_to_chunk:
+                text = getattr(faction_data, field.value)
 
-            print("added embeddings for " + faction_data.get("name"))
+                chunks = create_chunks(text, chunk_size, overlap_size)
+                print("created chunks")
+
+                for (id, chunk) in enumerate(chunks):
+                    add_embedding(id, chunk, faction_data.faction, field)
+                    print("chunk " + str(id) + " added")
+
+            print(str(faction_data.faction) + " embeddings done")
+
+add_faction_embeddings()        

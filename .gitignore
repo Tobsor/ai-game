@@ -2,3 +2,4 @@
 **/.env
 faction_db/**
 data/**
+**/__pycache__/**

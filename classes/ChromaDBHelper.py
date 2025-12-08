@@ -1,8 +1,8 @@
 import ollama
 import chromadb
-# from vllm import LLM, SamplingParams
+from models import Metadata
 
-model_name = "PygmalionAI/mythalion-13b"
+model_name = "nollama/mythomax-l2-13b:Q4_K_M"
 
 class ChromaDBHelper:
     _instance = None
@@ -15,53 +15,77 @@ class ChromaDBHelper:
 
     def __init__(self):
         if not self._initialized:
-            self.db = chromadb.PersistentClient(path="./faction_db").get_or_create_collection("factions")
+            self.db = chromadb.PersistentClient(path="./faction_db").get_or_create_collection("factions", metadata={"hnsw:space": "cosine"})
             self.model = "nomic-embed-text"
             self._initialized = True
             self.messages = []
-            # self.sampling_params = SamplingParams(temperature=0.7, max_tokens=256)
-            # self.llm = LLM(model=model_name)
 
-    def get_embedding(self, text):
+    def get_embedding(self, text: str):
         response = ollama.embeddings(model="mxbai-embed-large", prompt=text)
         return response['embedding']
     
-    def init_context(self, context):
+    def init_context(self, context: str):
         self.messages.append({"role": "system", "content": context})
     
-    def add_embedding(self, id, text, metadata):
+    def add_embedding(self, id: str, text: str, metadata: Metadata | None):
         
         embedding = self.get_embedding(text)
 
-        self.db.add(
-            ids=[id],
-            documents=[text],
-            embeddings=embedding,
-            metadatas=[metadata]
-        )
+        kwargs = {
+            "ids":[id],
+            "documents":[text],
+            "embeddings":embedding,
+        }
 
-    def query_docs(self, prompt, filter = None, concat = False):
+        if metadata is not None:
+            kwargs["metadatas"] = [metadata.model_dump(mode="json", exclude_none=True)]
+
+        self.db.add(**kwargs)
+
+    def query_docs(self, prompt: str, filter: dict[str, list[dict[str, str]]] | None = None):
         embedding = self.get_embedding(prompt)
 
-        res = self.db.query(
-            query_embeddings=[embedding],
-            n_results=3,
-            where=filter,
-        )
+        kwargs = {
+            "query_embeddings":[embedding],
+            "n_results":5,
+        }
 
-        docs = [doc for doc in res["documents"][0]]
+        if filter != None:
+            kwargs["where"] = filter
 
-        if concat:
-            return  "\n".join(docs)
+        res = self.db.query(**kwargs)
+
+        documents = res.get("documents")
+        distances = res.get("distances")
+
+        print(distances)
+        print(documents)
+        if documents == None or len(documents[0]) == 0:
+            return None
         
-        return docs
+        return documents
     
-    def generate_text(self, prompt):
+    def query_text(self, prompt: str, filter = None) :
+        docs = self.query_docs(prompt=prompt, filter=filter)
+
+        if(docs == None):
+            return ""
+        
+        print(docs)
+
+        docs_text = [doc[0] for doc in docs]
+        
+        return  "\n".join(docs_text)
+    
+    def generate_text(self, prompt: str) -> str:
         new_message = {"role": "user", "content": prompt}
         self.messages.append(new_message)
 
-        res = ollama.chat(model="vthebeast/mythalion-13b", messages=self.messages)
+        # start = time.time()   
+        res = ollama.chat(model=model_name, messages=self.messages)
 
+        # end = time.time()   
+        # print("Creating text took: " + str(end - start))
         self.messages.append(res["message"])
 
         return res["message"]["content"]

@@ -35,7 +35,7 @@ with open('./data/character_data_cop.csv', mode ='r') as file:
         print("retrieved factions")
 
         for character in csvFile:
-            all_characters.append({ "name": character.get("name"), "faction": character.get("faction")})
+            all_characters.append(character)
 show_menu()
 
 loop = True
@@ -45,6 +45,7 @@ keyboard.add_hotkey('down', down)
 
 while loop:
     if keyboard.read_key() == "enter":
+
         loop = False
 
 keyboard.remove_hotkey("up")
@@ -53,6 +54,9 @@ keyboard.remove_hotkey("down")
 npc = Character(all_characters[selected], situation)
 
 talk_ongoing = True
+
+npc.initiate_conversion()
+
 while talk_ongoing:
     answer = npc.prompt(prompt=input())
     print(answer)
