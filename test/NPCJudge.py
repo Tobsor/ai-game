@@ -1,5 +1,5 @@
 from dataclasses import dataclass, fields, asdict
-from typing import Dict, Any, Type
+from typing import Dict, Any
 import csv
 import json
 import re
@@ -118,7 +118,7 @@ class NpcJudge:
         {character.situation}
 
         [Sentiment Towards Player]
-        {character.init_sentiment}
+        {character.sentiment}
 
         [Relevant Context]
         {context}

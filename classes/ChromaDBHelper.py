@@ -21,14 +21,14 @@ class ChromaDBHelper:
             self.messages = []
 
     def get_embedding(self, text: str):
-        response = ollama.embeddings(model="mxbai-embed-large", prompt=text)
-        return response['embedding']
+        response = ollama.embed(model="mxbai-embed-large", input=text)
+        
+        return response.embeddings
     
     def init_context(self, context: str):
         self.messages.append({"role": "system", "content": context})
     
     def add_embedding(self, id: str, text: str, metadata: Metadata | None):
-        
         embedding = self.get_embedding(text)
 
         kwargs = {
@@ -46,7 +46,7 @@ class ChromaDBHelper:
         embedding = self.get_embedding(prompt)
 
         kwargs = {
-            "query_embeddings":[embedding],
+            "query_embeddings": embedding,
             "n_results":5,
         }
 
@@ -58,21 +58,17 @@ class ChromaDBHelper:
         documents = res.get("documents")
         distances = res.get("distances")
 
-        print(distances)
-        print(documents)
         if documents == None or len(documents[0]) == 0:
             return None
         
         return documents
     
-    def query_text(self, prompt: str, filter = None) :
+    def query_text(self, prompt: str, filter = None):
         docs = self.query_docs(prompt=prompt, filter=filter)
 
         if(docs == None):
             return ""
         
-        print(docs)
-
         docs_text = [doc[0] for doc in docs]
         
         return  "\n".join(docs_text)

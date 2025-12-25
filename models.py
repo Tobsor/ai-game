@@ -1,6 +1,9 @@
 from enum import Enum
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Sequence, Any
+from ollama._types import Message
+
+ToolCall = Message.ToolCall
 
 class Faction(Enum):
     RACCOON = "raccoon"
@@ -31,6 +34,28 @@ class MetadataCategory(Enum):
     RELATIONS = "relations"
     LORE = "lore"
 
+class CognitiveAction(Enum):
+    REMEMBER = "remember"
+    RESEARCH = "research"
+    RECALLKNOWLEDGE = "recall_knowledge"
+    SOCIAL = "social_interaction"
+    INTROSPECT = "introspect"
+    PLAN = "plan"
+
+class NPCAction(Enum):
+    KEEP_TALKING = "keep_talking"
+    END_CONVERSATION = "end_conversation"
+
+class Sentiment(Enum):
+    NEUTRAL = "neutral"
+    HAPPY = "happy"
+    GRATEFUL = "grateful"
+    STIMLUATED = "stimulated"
+    INSULTED = "insulted"
+    DISAPPOINTED = "disappointed"
+    ANGRY = "angry"
+    DISINTERESTED = "disinterested"
+
 class FactionData(BaseModel):
     faction: Faction
     lore: str
@@ -56,3 +81,35 @@ class TestPrompt(BaseModel):
     npc_response: Optional[str] = None
     category: PromptCategory
     authors_note: str
+
+class ExpectedResult(BaseModel):
+    is_invoked: bool
+    args: Any
+
+class ExpectedToolArgs(BaseModel):
+    cognitive_action: ExpectedResult
+    generate_npc_intention: ExpectedResult
+    change_sentiment: ExpectedResult
+    immediate_action: ExpectedResult
+
+class AgentTestPrompt(BaseModel):
+    user_query: str
+    npc_response: Optional[Sequence[ToolCall] | None] = None
+    category: PromptCategory
+    expected_args: ExpectedToolArgs
+
+class NPCAgentDecision(BaseModel):
+    cognitive_actions: list[CognitiveAction]
+    npc_intent: str
+    action: NPCAction
+    sentiment: Sentiment
+
+class AgentJudgeResult(BaseModel):
+    tool: str
+    args: Any
+    expected_invoked: bool
+    expected_args: Any
+    user_prompt: str
+    raw_response: Any
+    invoked_pass: bool
+    args_pass: float

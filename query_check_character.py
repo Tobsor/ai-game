@@ -56,7 +56,4 @@ npc = Character(all_characters[selected], situation)
 talk_ongoing = True
 
 npc.initiate_conversion()
-
-while talk_ongoing:
-    answer = npc.prompt(prompt=input())
-    print(answer)
+    
