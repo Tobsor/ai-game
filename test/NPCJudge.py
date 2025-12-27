@@ -7,6 +7,7 @@ import ollama
 from classes.Character import Character
 import os
 from models import TestPrompt, PromptCategory
+from logger import configure_logging, get_logger
 
 @dataclass
 class JudgeResult:
@@ -35,6 +36,8 @@ class JudgeResult:
 judge_model = "mistral:7b-instruct-v0.3-q8_0"
 
 script_dir = os.path.dirname(__file__)
+configure_logging()
+logger = get_logger(__name__)
 
 class NpcJudge:
     """
@@ -255,12 +258,12 @@ class NpcJudge:
         prompts_columns = [f.name for f in fields(TestPrompt)]
         results_columns = [f.name for f in fields(JudgeResult)]
 
-        print("Start generating NPC answers")
+        logger.info("Start generating NPC answers")
         for (i, prompt) in enumerate(prompts):
             prompt.npc_response = character.prompt(prompt.user_query)
 
             all_prompts.append(prompt)
-            print("Generated NPC answers: " + str(i) + " / " + str(len(prompts)))
+            logger.info("Generated NPC answers: %s / %s", i, len(prompts))
         
         self.export_data(all_prompts, prompts_columns, prompts_path)
 
@@ -274,6 +277,6 @@ class NpcJudge:
             if result != None:
                 all_results.append(result)
 
-            print("Evaluated " + str(i) + " / " + str(len(prompts)))
+            logger.info("Evaluated %s / %s", i, len(prompts))
 
         self.export_data(all_results, results_columns, results_path)

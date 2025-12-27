@@ -1,11 +1,15 @@
 import csv
 from classes.ChromaDBHelper import ChromaDBHelper
 from models import FactionData, Faction, Metadata, MetadataType, MetadataCategory
+from logger import configure_logging, get_logger
 
 db = ChromaDBHelper()
 chunk_size = 100
 overlap_size = 50
 fields_to_chunk: list[MetadataCategory] = [MetadataCategory.LORE]
+
+configure_logging()
+logger = get_logger(__name__)
 
 def create_chunks(text: str, chunk_size: int, overlap_size: int):
     words = text.split()
@@ -39,23 +43,23 @@ def add_faction_embeddings():
     with open('./data/faction_data/faction_data.csv', mode ='r') as file:
         csvFile = csv.DictReader(file, delimiter=';')
 
-        print("retrieved faction data")
+        logger.info("Retrieved faction data")
 
         for faction in csvFile:
             faction_data = FactionData(**faction) # type: ignore
 
-            print("adding attributes for " + str(faction_data.faction))
+            logger.info("Adding attributes for %s", faction_data.faction)
 
             for field in fields_to_chunk:
                 text = getattr(faction_data, field.value)
 
                 chunks = create_chunks(text, chunk_size, overlap_size)
-                print("created chunks")
+                logger.info("Created chunks")
 
                 for (id, chunk) in enumerate(chunks):
                     add_embedding(id, chunk, faction_data.faction, field)
-                    print("chunk " + str(id) + " added")
+                    logger.info("Chunk %s added", id)
 
-            print(str(faction_data.faction) + " embeddings done")
+            logger.info("%s embeddings done", faction_data.faction)
 
 add_faction_embeddings()        

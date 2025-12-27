@@ -4,8 +4,11 @@ from dataclasses import asdict
 import os
 import csv
 from typing import Any, Callable, Sequence
+from logger import configure_logging, get_logger
 
 script_dir = os.path.dirname(__file__)
+configure_logging()
+logger = get_logger(__name__)
 
 class AgentTest:
     def export_data(self, data: list[Any], columns: Sequence[str], path: str) -> None:
@@ -156,7 +159,7 @@ class AgentTest:
         prompts_columns = list(AgentTestPrompt.model_fields.keys())
         results_columns = list(AgentJudgeResult.model_fields.keys())
 
-        print("Start generating NPC answers")
+        logger.info("Start generating NPC answers")
         for (i, prompt) in enumerate(prompts):
             prompt.npc_response = character.agent.prompt_agent(
                 name=character.name,
@@ -168,7 +171,7 @@ class AgentTest:
             )
 
             all_prompts.append(prompt)
-            print("Generated NPC answers: " + str(i) + " / " + str(len(prompts)))
+            logger.info("Generated NPC answers: %s / %s", i, len(prompts))
         
         self.export_data(all_prompts, prompts_columns, prompts_path)
 
@@ -178,6 +181,6 @@ class AgentTest:
             if result != None:
                 all_results.extend(result)
 
-            print("Evaluated " + str(i) + " / " + str(len(prompts)))
+            logger.info("Evaluated %s / %s", i, len(prompts))
 
         self.export_data(all_results, results_columns, results_path)

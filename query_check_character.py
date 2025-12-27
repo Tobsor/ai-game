@@ -1,10 +1,14 @@
 import csv
 import keyboard
 from classes.Character import Character
+from logger import configure_logging, get_logger
 
 selected = 0
 all_characters = []
 situation="{{user}} enters the village of Rack and stumbles upon {{char}}. {{char}} initiates the contact to {{user}}"
+
+configure_logging()
+logger = get_logger(__name__)
 
 def show_menu():
     global selected
@@ -32,7 +36,7 @@ def down():
 with open('./data/character_data_cop.csv', mode ='r') as file:
         csvFile = csv.DictReader(file, delimiter=';')
 
-        print("retrieved factions")
+        logger.info("Retrieved factions")
 
         for character in csvFile:
             all_characters.append(character)
@@ -53,7 +57,5 @@ keyboard.remove_hotkey("down")
 
 npc = Character(all_characters[selected], situation)
 
-talk_ongoing = True
-
-npc.initiate_conversion()
+# npc.initiate_conversation()
     

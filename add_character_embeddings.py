@@ -1,11 +1,15 @@
 import csv
 from classes.ChromaDBHelper import ChromaDBHelper
 from models import Character, Faction, MetadataType, MetadataCategory, Metadata
+from logger import configure_logging, get_logger
 
 db = ChromaDBHelper()
 chunk_size = 100
 overlap_size = 50
 fields_to_chunk = [MetadataCategory.KNOWLEDGE, MetadataCategory.PAST, MetadataCategory.RELATIONS]
+
+configure_logging()
+logger = get_logger(__name__)
 
 def create_chunks(text: str, chunk_size: int, overlap_size: int):
     words = text.split()
@@ -39,23 +43,23 @@ def add_character_embeddings():
     with open('./data/character_data_cop.csv', mode ='r') as file:
         csvFile = csv.DictReader(file, delimiter=';')
 
-        print("retrieved char data")
+        logger.info("Retrieved character data")
 
         for character in csvFile:
             character_data = Character(**character) # type: ignore
 
-            print("adding attributes for " + character_data.name)
+            logger.info("Adding attributes for %s", character_data.name)
 
             for field in fields_to_chunk:
                 text = getattr(character_data, field.value)
 
                 chunks = create_chunks(text, chunk_size, overlap_size)
-                print("created chunks")
+                logger.info("Created chunks")
 
                 for (id, chunk) in enumerate(chunks):
                     add_embedding(id, chunk, character_data.name, character_data.faction, field)
-                    print("chunk " + str(id) + " added")
+                    logger.info("Chunk %s added", id)
 
-            print(character_data.name + " embeddings done")
+            logger.info("%s embeddings done", character_data.name)
 
 add_character_embeddings()

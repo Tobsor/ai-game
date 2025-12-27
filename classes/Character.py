@@ -2,7 +2,11 @@ from classes.ChromaDBHelper import ChromaDBHelper
 from classes.NpcAgent import NPCAgent
 from models import Character as CharacterType, Faction, MetadataType, MetadataCategory, CognitiveAction, NPCAction, Sentiment
 from typing import Any
-from ollama import Tool
+from fastapi import WebSocket
+from server_models import ChatRequest
+import json
+
+from logger import get_logger
 
 annotation_mapping = {
     "job": "Job",
@@ -16,8 +20,7 @@ annotation_mapping = {
     "intelligence": "Intelligence"
 }
 
-def err(input: str):
-    return "\033[31m" + input + "\033[0m"
+logger = get_logger(__name__)
 
 class Character:
     id: str
@@ -45,8 +48,8 @@ class Character:
 
         self.sentiment = self.compute_sentiment()
 
-    def initiate_conversion(self):
-        print("initiating conversation...")
+    async def initiate_conversation(self, socket: WebSocket):
+        logger.info("Initiating conversation with %s", self.name)
         greeting_prompt = f"""
             Enter RP mode. You are {self.name}. Stay in character at all times, speaking in first person as {self.name}:
 
@@ -66,13 +69,37 @@ class Character:
             <|model|>{{model's response goes here}}
         """
 
-        response = self.db.generate_text(greeting_prompt)
+        greeting = self.db.generate_text(greeting_prompt)
+        await socket.send_json({ "event": "message", "data": greeting })
 
-        print(response)
+        logger.trace("Greeting sent")
 
         while self.talk_ongoing:
-            answer = self.prompt(prompt=input())
-            print(answer)
+            user_prompt = None
+
+            try:
+                payload = await socket.receive_text()
+                logger.info("Received message")
+                data = json.loads(payload)
+                request = ChatRequest(**data)
+
+                user_prompt = request.prompt
+                logger.debug("Request end flag: %s", request.end)
+                self.talk_ongoing = request.end != True
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.error("Error happened: %s", exc)
+                await socket.send_json({"event": "error", "data": f"Invalid request: {exc}"})
+                await socket.close(code=1003)
+                return
+
+            if(self.talk_ongoing == False):
+                logger.info("Ending conversation")
+                return
+
+            answer = self.prompt(prompt=user_prompt)
+            
+            logger.trace("Responding to client")
+            await socket.send_json({ "event": "message", "data": answer })
 
     def create_answer_prompt(self, prompt: str, sentiment: str, intention: str, context: str):
         return f"""
@@ -219,9 +246,9 @@ class Character:
             An $or metadata construction including all filters to be applied when quering documents on chromadb
         """
 
-        print("Invoked cognitive action with: " + str(actions))
+        logger.trace("Invoked cognitive action with: %s", actions)
         if isinstance(actions, list) == False:
-            print(err("Invalid args provided to cognitive action: " + str(actions)))
+            logger.error("Invalid args provided to cognitive action: %s", actions)
             return None
 
         all_filters = []
@@ -230,7 +257,7 @@ class Character:
             try:
                 CognitiveAction(action)
             except ValueError:
-                print(err("Invalid cognitive action detected: " + str(action)))
+                logger.error("Invalid cognitive action detected: %s", action)
                 continue
 
             match action:
@@ -266,9 +293,9 @@ class Character:
             intention: A list of intentions which as a sum descrive the npc's intention
             reasoning: A short explanation on what intention the npc follows when responding.
         """
-        print("Invoked npc intention with: " + str(intention))
-        if isinstance(intention, str) == False:
-            print(err("Malformed intention: " + str(intention)))
+        logger.trace("Invoked npc intention with: %s", intention)
+        if isinstance(intention, list) == False:
+            logger.error("Malformed intention: %s", intention)
             return ""
         
         return str(intention) + ": " + reasoning
@@ -283,11 +310,11 @@ class Character:
         Returns:
             Boolean whether the NPC continues the conversation with the user or not
         """
-        print("Invoked immediate action with: " + str(action))
+        logger.trace("Invoked immediate action with: %s", action)
         try:
             NPCAction(action)
         except ValueError:
-            print(err("Invalid action value detected: " + str(action)))
+            logger.error("Invalid action value detected: %s", action)
             return NPCAction.KEEP_TALKING
     
         self.talk_ongoing = action != NPCAction.END_CONVERSATION
@@ -300,11 +327,11 @@ class Character:
             new_sentiment: A short explanation on how the character now feels after that user interaction
             reasoning: A short explanation on why the new state was selected and how the character now feels
         """
-        print("Invoked new sentiment with: " + str(new_sentiment))
+        logger.trace("Invoked new sentiment with: %s", new_sentiment)
         try: 
             Sentiment(new_sentiment)
         except ValueError:
-            print(err("Invalid sentiment value: " + str(new_sentiment)))
+            logger.error("Invalid sentiment value: %s", new_sentiment)
             return
         
         self.sentiment = new_sentiment + ": " + reasoning
@@ -324,7 +351,7 @@ class Character:
         if(prompt.strip() == ""):
             return ""
 
-        print("Invoking agent")        
+        logger.trace("Invoking agent")
         tool_calls = self.agent.prompt_agent(
             prompt=prompt,
             sentiment=self.sentiment,
@@ -340,20 +367,24 @@ class Character:
             ]
         )
 
-        available_tools = ["cognitive_action", "generate_npc_intention", "immediate_action", "change_sentiment"]
+        available_tools = [
+            "cognitive_action",
+            "generate_npc_intention",
+            "immediate_action",
+            "change_sentiment",
+            "flag_jailbreak"
+        ]
         filter = None
         intention = ""
 
-
-
-        print("Invoking tools")
+        logger.trace("Invoking tools")
         if(tool_calls != None):
             for tool_call in tool_calls:
                 args = tool_call.function.arguments
                 tool = tool_call.function.name
 
                 if tool not in available_tools:
-                    print(err("Invalid tool invocation detected: " + str(tool)))
+                    logger.error("Invalid tool invocation detected: %s", tool)
                     continue
 
                 match tool:
@@ -366,15 +397,15 @@ class Character:
                     case "immediate_action":
                         self.immediate_action(**args)
 
-        print("Generating context")
+        logger.trace("Generating context")
         context = self.db.query_text(prompt=prompt, filter=filter)
 
-        print("Generating prompt")
+        logger.trace("Generating prompt")
         final_prompt = self.create_answer_prompt(prompt, self.sentiment, intention, context)
 
-        print(final_prompt)
+        logger.debug("Final prompt: %s", final_prompt)
 
-        print("Generating response")
+        logger.trace("Generating response")
         response = self.db.generate_text(final_prompt)
 
         return response 

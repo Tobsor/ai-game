@@ -5,6 +5,7 @@ from classes.Character import Character
 from test.NPCJudge import NpcJudge
 from test.AgentTest import AgentTest
 from models import TestPrompt, AgentTestPrompt
+from logger import configure_logging, get_logger
 
 situation="{{user}} enters the village of Rack and stumbles upon {{char}}. {{char}} initiates the contact to {{user}}"
 all_characters = []
@@ -14,6 +15,9 @@ is_test = False
 
 selected_test = 0
 selected_character = 0
+
+configure_logging()
+logger = get_logger(__name__)
 
 def test_character(character: Character):
     npc_judge = NpcJudge()
@@ -49,10 +53,10 @@ def show_menu(options):
     if is_test:
         selected = selected_test
 
-    print("\n" * 30)
-    print("Choose to talk to character:")
+    logger.info("\n" * 30)
+    logger.info("Choose to talk to character:")
     for i, option in enumerate(options):
-        print("{0} {1} {2}".format(">" if selected == i else " ", option, "<" if selected == i else " "))
+        logger.info("{0} {1} {2}".format(">" if selected == i else " ", option, "<" if selected == i else " "))
 
 def up():
     selected = selected_character
@@ -95,7 +99,7 @@ def set_test(index: int):
 with open('./data/character_data_cop.csv', mode ='r') as file:
         csvFile = csv.DictReader(file, delimiter=';')
 
-        print("retrieved factions")
+        logger.info("Retrieved factions")
 
         for character in csvFile:
             all_characters.append(character)

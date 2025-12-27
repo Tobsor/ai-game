@@ -49,12 +49,18 @@ class NPCAction(Enum):
 class Sentiment(Enum):
     NEUTRAL = "neutral"
     HAPPY = "happy"
+    SHOCKED = "shocked"
     GRATEFUL = "grateful"
+    CONFUSED = "confused"
     STIMLUATED = "stimulated"
     INSULTED = "insulted"
+    SKEPTICAL = "skeptical"
     DISAPPOINTED = "disappointed"
     ANGRY = "angry"
+    INTERESTED = "interested"
     DISINTERESTED = "disinterested"
+    AGITATED = "agitated"
+    NERVOUS = "nervous"
 
 class FactionData(BaseModel):
     faction: Faction

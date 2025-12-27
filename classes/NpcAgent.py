@@ -3,8 +3,12 @@ from typing import Dict, Any, Callable
 import re
 import json
 
+from logger import get_logger
+
 model = "qwen3:4b-instruct-2507-q8_0"
 # model = "qwen3-fixed:4b"
+
+logger = get_logger(__name__)
 
 class NPCAgent:
     def parse_output(self, raw_output: str) -> Dict[str, Any]:
@@ -105,6 +109,6 @@ class NPCAgent:
             tools=tools
         )
 
-        print(res.message)
+        logger.debug("Generated payload: %s", res.message)
 
         return res.message.tool_calls        
