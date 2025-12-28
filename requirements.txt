@@ -1,5 +1,5 @@
 chromadb
-dotenv
+python-dotenv
 ollama
 keyboard
 vllm

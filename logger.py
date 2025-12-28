@@ -2,12 +2,27 @@ import logging
 import os
 from typing import Optional, Protocol, cast
 
+try:
+    from dotenv import load_dotenv
+except Exception:
+    load_dotenv = None
+
 _configured = False
 TRACE_LEVEL = 15
 
 
-class LoggerWithTrace(logging.Logger, Protocol):
+class LoggerWithTrace(Protocol):
     def trace(self, message: str, *args, **kwargs) -> None:
+        ...
+    def debug(self, message: str, *args, **kwargs) -> None:
+        ...
+    def info(self, message: str, *args, **kwargs) -> None:
+        ...
+    def warning(self, message: str, *args, **kwargs) -> None:
+        ...
+    def error(self, message: str, *args, **kwargs) -> None:
+        ...
+    def critical(self, message: str, *args, **kwargs) -> None:
         ...
 
 
@@ -31,10 +46,14 @@ def configure_logging(level: Optional[str | int] = None) -> None:
             logging.getLogger().setLevel(level)
         return
 
+    if load_dotenv is not None:
+        load_dotenv()
+
     resolved_level = level or os.getenv("LOG_LEVEL", "INFO")
+    print("LOGLEVEL: " + str(resolved_level))
     logging.basicConfig(
         level=resolved_level,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        format="%(levelname)s | %(name)s | %(message)s",
     )
     _configured = True
 

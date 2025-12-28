@@ -4,8 +4,8 @@ from pathlib import Path
 
 import json
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 from server_models import InitChatRequest
 
 from classes.Character import Character
@@ -62,6 +62,7 @@ async def chat(websocket: WebSocket) -> None:
         logger.error("Bad payload: %s", payload)
 
         await websocket.send_json({"event": "error", "data": f"Invalid request: {exc}"})
+        logger.info("Conversation concluded: invalid request")
         await websocket.close(code=1003)
         return
 
@@ -70,6 +71,7 @@ async def chat(websocket: WebSocket) -> None:
         logger.error("No character with name: %s", request.name)
 
         await websocket.send_json({"event": "error", "data": "Character not found"})
+        logger.info("Conversation concluded: error no character")
         await websocket.close(code=1008)
         return
 
@@ -88,7 +90,9 @@ async def chat(websocket: WebSocket) -> None:
     except Exception as exc:
         await websocket.send_json({"event": "error", "data": str(exc)})
     finally:
-        await websocket.close()
+        logger.info("Conversation concluded")
+        if websocket.client_state == WebSocketState.CONNECTED:
+            await websocket.close()
 
 def main() -> None:
     import uvicorn
