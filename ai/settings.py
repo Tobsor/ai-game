@@ -40,8 +40,8 @@ DEFAULT_CHROMA = LocalChromaConfig(
 )
 
 BUILT_IN_PROFILES: dict[str, AISettings] = {
-    "local_current_hardcoded": AISettings(
-        profile="local_current_hardcoded",
+    "local": AISettings(
+        profile="local",
         decision_llm=RoleProviderConfig(
             provider="ollama",
             model="qwen3:4b-instruct-2507-q8_0",
@@ -60,11 +60,11 @@ BUILT_IN_PROFILES: dict[str, AISettings] = {
         ),
         chroma=DEFAULT_CHROMA,
     ),
-    "local_custom_ollama": AISettings(
-        profile="local_custom_ollama",
+    "hugging_face__remote": AISettings(
+        profile="hugging_face__remote",
         decision_llm=RoleProviderConfig(
-            provider="ollama",
-            model="qwen3:4b-instruct-2507-q8_0",
+            provider="huggingface",
+            model="Qwen/Qwen3-4B-Instruct-2507:nscale",
         ),
         response_llm=RoleProviderConfig(
             provider="ollama",
@@ -186,7 +186,7 @@ def _validate_role(name: str, config: RoleProviderConfig) -> None:
     if config.model == "":
         raise ValueError(f"Missing model for role '{name}'")
 
-    if config.provider in {"huggingface", "openai_compatible"} and config.base_url == "":
+    if config.provider == "openai_compatible" and config.base_url == "":
         raise ValueError(f"Missing base_url for hosted provider role '{name}'")
 
 
@@ -235,7 +235,7 @@ def _log_settings(settings: AISettings) -> None:
 
 @lru_cache(maxsize=1)
 def get_ai_settings() -> AISettings:
-    profile_name = os.getenv("AI_PROFILE", "local_current_hardcoded")
+    profile_name = os.getenv("AI_PROFILE", "local")
     if profile_name not in BUILT_IN_PROFILES:
         raise ValueError(f"Unknown AI profile '{profile_name}'")
 

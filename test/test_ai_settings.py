@@ -14,7 +14,7 @@ class AISettingsTests(unittest.TestCase):
             get_ai_settings.cache_clear()
             settings = get_ai_settings()
 
-        self.assertEqual(settings.profile, "local_current_hardcoded")
+        self.assertEqual(settings.profile, "local")
         self.assertEqual(settings.decision_llm.model, "qwen3:4b-instruct-2507-q8_0")
         self.assertEqual(settings.response_llm.model, "nollama/mythomax-l2-13b:Q4_K_M")
         self.assertEqual(settings.judge_llm.model, "mistral:7b-instruct-v0.3-q8_0")
@@ -24,7 +24,7 @@ class AISettingsTests(unittest.TestCase):
 
     def test_role_overrides_are_applied(self):
         with patch.dict(os.environ, {
-            "AI_PROFILE": "local_current_hardcoded",
+            "AI_PROFILE": "local",
             "DECISION_MODEL": "custom-decision",
             "RESPONSE_MODEL": "custom-response",
         }, clear=True):
@@ -36,10 +36,22 @@ class AISettingsTests(unittest.TestCase):
 
     def test_hosted_provider_requires_base_url(self):
         with patch.dict(os.environ, {
-            "AI_PROFILE": "local_current_hardcoded",
-            "DECISION_PROVIDER": "huggingface",
+            "AI_PROFILE": "local",
+            "DECISION_PROVIDER": "openai_compatible",
             "DECISION_MODEL": "some-model",
         }, clear=True):
             get_ai_settings.cache_clear()
             with self.assertRaises(ValueError):
                 get_ai_settings()
+
+    def test_huggingface_provider_does_not_require_base_url(self):
+        with patch.dict(os.environ, {
+            "AI_PROFILE": "local",
+            "DECISION_PROVIDER": "huggingface",
+            "DECISION_MODEL": "some-model",
+        }, clear=True):
+            get_ai_settings.cache_clear()
+            settings = get_ai_settings()
+
+        self.assertEqual(settings.decision_llm.provider, "huggingface")
+        self.assertEqual(settings.decision_llm.model, "some-model")

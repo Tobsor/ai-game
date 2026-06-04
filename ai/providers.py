@@ -1,13 +1,18 @@
+import inspect
 import json
 import os
 from dataclasses import dataclass
-import inspect
 from typing import Any, Protocol
 from urllib import request
 
 import ollama
 
 from ai.settings import RoleProviderConfig
+
+try:
+    from huggingface_hub import InferenceClient
+except ImportError:  # pragma: no cover - exercised only when dependency is missing at runtime
+    InferenceClient = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -75,6 +80,56 @@ def _normalize_tool_calls(raw_tool_calls: Any) -> list[NormalizedToolCall]:
     return normalized_calls
 
 
+def _extract_message_content(message: Any) -> str:
+    if message is None:
+        return ""
+
+    if isinstance(message, dict):
+        content = message.get("content", "")
+    else:
+        content = getattr(message, "content", "")
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        text_parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                text_parts.append(str(item.get("text", "")))
+            else:
+                text_value = getattr(item, "text", "")
+                if text_value != "":
+                    text_parts.append(str(text_value))
+        return "".join(text_parts)
+
+    return str(content)
+
+
+def _extract_message_tool_calls(message: Any) -> Any:
+    if message is None:
+        return None
+
+    if isinstance(message, dict):
+        return message.get("tool_calls")
+
+    return getattr(message, "tool_calls", None)
+
+
+def _coerce_embedding_payload(embedding: Any) -> list[float]:
+    if hasattr(embedding, "tolist"):
+        embedding = embedding.tolist()
+
+    if isinstance(embedding, list) and len(embedding) > 0 and isinstance(embedding[0], list):
+        first_row = embedding[0]
+        return [float(value) for value in first_row]
+
+    if isinstance(embedding, list):
+        return [float(value) for value in embedding]
+
+    return []
+
+
 class OllamaChatProvider:
     def __init__(self, config: RoleProviderConfig):
         self.config = config
@@ -89,12 +144,10 @@ class OllamaChatProvider:
 
         result = ollama.chat(**kwargs)
         message = result["message"] if isinstance(result, dict) else result.message
-        content = message.get("content", "") if isinstance(message, dict) else getattr(message, "content", "")
-        tool_calls = message.get("tool_calls") if isinstance(message, dict) else getattr(message, "tool_calls", None)
 
         return ChatCompletionResult(
-            content=content,
-            tool_calls=_normalize_tool_calls(tool_calls),
+            content=_extract_message_content(message),
+            tool_calls=_normalize_tool_calls(_extract_message_tool_calls(message)),
         )
 
 
@@ -116,7 +169,7 @@ class OllamaTextGenerationProvider:
         return ollama.generate(model=self.config.model, prompt=prompt)["response"]
 
 
-class HostedChatProvider:
+class OpenAICompatibleChatProvider:
     def __init__(self, config: RoleProviderConfig):
         self.config = config
 
@@ -137,12 +190,12 @@ class HostedChatProvider:
         message = choice.get("message", {})
 
         return ChatCompletionResult(
-            content=message.get("content", "") or "",
-            tool_calls=_normalize_tool_calls(message.get("tool_calls")),
+            content=_extract_message_content(message),
+            tool_calls=_normalize_tool_calls(_extract_message_tool_calls(message)),
         )
 
 
-class HostedEmbeddingProvider:
+class OpenAICompatibleEmbeddingProvider:
     def __init__(self, config: RoleProviderConfig):
         self.config = config
 
@@ -165,14 +218,78 @@ class HostedEmbeddingProvider:
         return []
 
 
-class HostedTextGenerationProvider:
+class OpenAICompatibleTextGenerationProvider:
     def __init__(self, config: RoleProviderConfig):
-        self.config = config
-        self.chat_provider = HostedChatProvider(config)
+        self.chat_provider = OpenAICompatibleChatProvider(config)
 
     def generate(self, prompt: str) -> str:
         result = self.chat_provider.chat(messages=[{"role": "user", "content": prompt}])
         return result.content
+
+
+class HuggingFaceInferenceProviderBase:
+    def __init__(self, config: RoleProviderConfig):
+        self.config = config
+        self.client = self._create_client()
+
+    def _create_client(self) -> Any:
+        if InferenceClient is None:
+            raise ImportError(
+                "huggingface_hub is required for provider='huggingface'. "
+                "Install it with `pip install huggingface_hub`."
+            )
+
+        api_key = ""
+        if self.config.api_key_env != "":
+            api_key = os.getenv(self.config.api_key_env, "")
+
+        client_kwargs: dict[str, Any] = {
+            "timeout": float(self.config.timeout_seconds),
+        }
+        if self.config.base_url != "":
+            client_kwargs["base_url"] = self.config.base_url
+        if api_key != "":
+            client_kwargs["api_key"] = api_key
+
+        return InferenceClient(**client_kwargs)
+
+
+class HuggingFaceChatProvider(HuggingFaceInferenceProviderBase):
+    def chat(self, messages: list[dict[str, Any]], tools: list[Any] | None = None) -> ChatCompletionResult:
+        kwargs: dict[str, Any] = {
+            "messages": messages,
+            "model": self.config.model,
+        }
+        if tools is not None:
+            kwargs["tools"] = _normalize_tool_definitions(tools)
+
+        result = self.client.chat_completion(**kwargs)
+        message = getattr(result, "choices", [None])[0]
+        normalized_message = getattr(message, "message", None)
+
+        return ChatCompletionResult(
+            content=_extract_message_content(normalized_message),
+            tool_calls=_normalize_tool_calls(_extract_message_tool_calls(normalized_message)),
+        )
+
+
+class HuggingFaceEmbeddingProvider(HuggingFaceInferenceProviderBase):
+    def embed(self, text: str) -> list[list[float]]:
+        embedding = self.client.feature_extraction(
+            text=text,
+            model=self.config.model,
+        )
+        return [_coerce_embedding_payload(embedding)]
+
+
+class HuggingFaceTextGenerationProvider(HuggingFaceInferenceProviderBase):
+    def generate(self, prompt: str) -> str:
+        result = self.client.text_generation(
+            prompt=prompt,
+            model=self.config.model,
+        )
+
+        return result if isinstance(result, str) else str(result)
 
 
 def _annotation_to_json_type(annotation: Any) -> str:
@@ -252,8 +369,11 @@ def create_chat_provider(config: RoleProviderConfig) -> ChatProvider:
     if config.provider == "ollama":
         return OllamaChatProvider(config)
 
-    if config.provider in {"huggingface", "openai_compatible"}:
-        return HostedChatProvider(config)
+    if config.provider == "huggingface":
+        return HuggingFaceChatProvider(config)
+
+    if config.provider == "openai_compatible":
+        return OpenAICompatibleChatProvider(config)
 
     raise ValueError(f"Unsupported chat provider '{config.provider}'")
 
@@ -262,8 +382,11 @@ def create_embedding_provider(config: RoleProviderConfig) -> EmbeddingProvider:
     if config.provider == "ollama":
         return OllamaEmbeddingProvider(config)
 
-    if config.provider in {"huggingface", "openai_compatible"}:
-        return HostedEmbeddingProvider(config)
+    if config.provider == "huggingface":
+        return HuggingFaceEmbeddingProvider(config)
+
+    if config.provider == "openai_compatible":
+        return OpenAICompatibleEmbeddingProvider(config)
 
     raise ValueError(f"Unsupported embedding provider '{config.provider}'")
 
@@ -272,7 +395,10 @@ def create_text_generation_provider(config: RoleProviderConfig) -> TextGeneratio
     if config.provider == "ollama":
         return OllamaTextGenerationProvider(config)
 
-    if config.provider in {"huggingface", "openai_compatible"}:
-        return HostedTextGenerationProvider(config)
+    if config.provider == "huggingface":
+        return HuggingFaceTextGenerationProvider(config)
+
+    if config.provider == "openai_compatible":
+        return OpenAICompatibleTextGenerationProvider(config)
 
     raise ValueError(f"Unsupported text provider '{config.provider}'")

@@ -8,7 +8,7 @@ from classes.Character import Character
 
 class CharacterSettingsWiringTests(unittest.TestCase):
     def test_character_passes_shared_settings_to_agent_and_db(self):
-        settings = BUILT_IN_PROFILES["local_current_hardcoded"]
+        settings = BUILT_IN_PROFILES["local"]
         char_data = {
             "name": "Mira",
             "faction": Faction.WORLD,
