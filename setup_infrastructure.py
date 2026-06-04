@@ -1,5 +1,9 @@
 from add_faction_embeddings import add_faction_embeddings
 from add_character_embeddings import add_character_embeddings
 
-add_faction_embeddings()
-add_character_embeddings()
+def main():
+    add_faction_embeddings()
+    add_character_embeddings()
+
+if __name__ == "__main__":
+    main()

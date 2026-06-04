@@ -62,4 +62,8 @@ def add_character_embeddings():
 
             logger.info("%s embeddings done", character_data.name)
 
-add_character_embeddings()
+def main():
+    add_character_embeddings()
+
+if __name__ == "__main__":
+    main()

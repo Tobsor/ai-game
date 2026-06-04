@@ -1,4 +1,5 @@
 from classes.ChromaDBHelper import ChromaDBHelper
+from ai import AISettings, get_ai_settings
 
 annotation_mapping = {
     "biological_properties": "Biological propertes",
@@ -12,10 +13,11 @@ annotation_mapping = {
 }
 
 class Faction:
-    def __init__(self, id, name):
+    def __init__(self, id, name, settings: AISettings | None = None):
         self.id = id
         self.name = name
-        self.db = ChromaDBHelper()
+        self.ai_settings = settings or get_ai_settings()
+        self.db = ChromaDBHelper(self.ai_settings)
 
     def create_prefix(self, category):
         return "[Name: "+ str(self.name) + ", category: " + str(annotation_mapping.get(category)) + "]: "

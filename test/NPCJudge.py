@@ -3,9 +3,9 @@ from typing import Dict, Any
 import csv
 import json
 import re
-import ollama
 from classes.Character import Character
 import os
+from ai import AISettings, create_text_generation_provider, get_ai_settings
 from models import TestPrompt, PromptCategory
 from logger import configure_logging, get_logger
 
@@ -31,9 +31,6 @@ class JudgeResult:
     # rule-based extras
     mentions_ooc: bool
     length_tokens: int
-
-# judge_model = "mixtral:8x7b-instruct-v0.1-q5_K_M"
-judge_model = "mistral:7b-instruct-v0.3-q8_0"
 
 script_dir = os.path.dirname(__file__)
 configure_logging()
@@ -191,7 +188,7 @@ class NpcJudge:
         For example, with Ollama's /api/generate or /api/chat.
         This is intentionally left abstract so you can plug in what you use.
         """
-        return ollama.generate(model=judge_model, prompt=prompt)["response"]
+        return self.provider.generate(prompt)
 
     def parse_judge_output(self, raw_output: str) -> Dict[str, Any]:
         """
@@ -280,3 +277,6 @@ class NpcJudge:
             logger.info("Evaluated %s / %s", i, len(prompts))
 
         self.export_data(all_results, results_columns, results_path)
+    def __init__(self, settings: AISettings | None = None):
+        settings = settings or get_ai_settings()
+        self.provider = create_text_generation_provider(settings.judge_llm)

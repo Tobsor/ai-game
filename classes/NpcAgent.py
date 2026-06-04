@@ -1,16 +1,17 @@
-import ollama
 from typing import Dict, Any, Callable
 import re
 import json
 
+from ai import AISettings, create_chat_provider, get_ai_settings
 from logger import get_logger
-
-model = "qwen3:4b-instruct-2507-q8_0"
-# model = "qwen3-fixed:4b"
 
 logger = get_logger(__name__)
 
 class NPCAgent:
+    def __init__(self, settings: AISettings | None = None):
+        settings = settings or get_ai_settings()
+        self.provider = create_chat_provider(settings.decision_llm)
+
     def parse_output(self, raw_output: str) -> Dict[str, Any]:
         """
         Attempt to parse JSON from the model output.
@@ -106,12 +107,11 @@ class NPCAgent:
 
         system_message = {"role": "user", "content": agent_prompt}
 
-        res = ollama.chat(
-            model=model,
+        res = self.provider.chat(
             messages=[system_message],
             tools=tools
         )
 
-        logger.debug("Generated payload: %s", res.message)
+        logger.debug("Generated payload: %s", res)
 
-        return res.message.tool_calls        
+        return res.tool_calls

@@ -1,29 +1,22 @@
-import ollama
 import chromadb
 from models import Metadata
-
-model_name = "nollama/mythomax-l2-13b:Q4_K_M"
+from ai import AISettings, create_chat_provider, create_embedding_provider, get_ai_settings
 
 class ChromaDBHelper:
-    _instance = None
-    _initialized = False
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self):
-        if not self._initialized:
-            self.db = chromadb.PersistentClient(path="./faction_db").get_or_create_collection("factions", metadata={"hnsw:space": "cosine"})
-            self.model = "nomic-embed-text"
-            self._initialized = True
-            self.messages = []
+    def __init__(self, settings: AISettings | None = None):
+        self.settings = settings or get_ai_settings()
+        self.db = chromadb.PersistentClient(
+            path=self.settings.chroma.path
+        ).get_or_create_collection(
+            self.settings.chroma.collection,
+            metadata={"hnsw:space": self.settings.chroma.distance_space}
+        )
+        self.embedding_provider = create_embedding_provider(self.settings.embedding_model)
+        self.response_provider = create_chat_provider(self.settings.response_llm)
+        self.messages = []
 
     def get_embedding(self, text: str):
-        response = ollama.embed(model="mxbai-embed-large", input=text)
-        
-        return response.embeddings
+        return self.embedding_provider.embed(text)
     
     def init_context(self, context: str):
         self.messages.append({"role": "system", "content": context})
@@ -40,7 +33,7 @@ class ChromaDBHelper:
         if metadata is not None:
             kwargs["metadatas"] = [metadata.model_dump(mode="json", exclude_none=True)]
 
-        self.db.add(**kwargs)
+        self.db.upsert(**kwargs)
 
     def query_docs(self, prompt: str, filter: dict[str, list[dict[str, str]]] | None = None):
         embedding = self.get_embedding(prompt)
@@ -77,11 +70,8 @@ class ChromaDBHelper:
         new_message = {"role": "user", "content": prompt}
         self.messages.append(new_message)
 
-        # start = time.time()   
-        res = ollama.chat(model=model_name, messages=self.messages)
+        res = self.response_provider.chat(messages=self.messages)
+        message = {"role": "assistant", "content": res.content}
+        self.messages.append(message)
 
-        # end = time.time()   
-        # print("Creating text took: " + str(end - start))
-        self.messages.append(res["message"])
-
-        return res["message"]["content"]
+        return res.content

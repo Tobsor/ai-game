@@ -1,5 +1,6 @@
 from classes.ChromaDBHelper import ChromaDBHelper
 from classes.NpcAgent import NPCAgent
+from ai import AISettings, get_ai_settings
 from models import Character as CharacterType, Faction, MetadataType, MetadataCategory, CognitiveAction, NPCAction, Sentiment
 from typing import Any
 from fastapi import WebSocket
@@ -34,7 +35,12 @@ class Character:
     agent: NPCAgent
     db: ChromaDBHelper
 
-    def __init__(self, char_data: dict[str | Any, str | Any] | None, situation):
+    def __init__(
+        self,
+        char_data: dict[str | Any, str | Any] | None,
+        situation,
+        settings: AISettings | None = None,
+    ):
         parsed = CharacterType(**char_data) # type: ignore
 
         self.name = parsed.name
@@ -43,8 +49,9 @@ class Character:
         self.pl_list = parsed.pl_list
         self.ali_chat = parsed.ali_chat
         self.situation = situation
-        self.db = ChromaDBHelper()
-        self.agent = NPCAgent()
+        self.ai_settings = settings or get_ai_settings()
+        self.db = ChromaDBHelper(self.ai_settings)
+        self.agent = NPCAgent(self.ai_settings)
         self.talk_ongoing = True
         self.pipeline = TurnPipeline(self)
 
