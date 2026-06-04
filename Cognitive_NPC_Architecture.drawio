@@ -1,0 +1,185 @@
+<mxfile host="Electron" agent="ChatGPT">
+  <diagram id="cognitive-npc-architecture" name="Cognitive NPC Architecture">
+    <mxGraphModel dx="6847" dy="4003" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="3200" pageHeight="1300" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="input" parent="1" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;fillColor=#d9edf7;" value="Player Message" vertex="1">
+          <mxGeometry height="70" width="160" x="70" y="639" as="geometry" />
+        </mxCell>
+        <mxCell id="ctx" parent="1" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=34;fontStyle=1;strokeWidth=2;fillColor=#dff0d8;" value="Initial Context" vertex="1">
+          <mxGeometry height="300" width="250" x="300" y="529" as="geometry" />
+        </mxCell>
+        <mxCell id="ctx_list" parent="ctx" style="whiteSpace=wrap;html=1;strokeColor=none;fillColor=none;align=left;spacingLeft=10;" value="Character Sheet&lt;br&gt;Current Scene&lt;br&gt;Mood&lt;br&gt;Relationship Summary&lt;br&gt;Active Goals&lt;br&gt;Recent Turns" vertex="1">
+          <mxGeometry height="230" width="220" x="10" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="cai" parent="1" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=34;fontStyle=1;strokeWidth=2;fillColor=#f7f7f7;" value="Context-Aware Interpretation&lt;br&gt;&lt;font style=&#39;font-size: 11px&#39;&gt;Maximum one optional retrieval + one reinterpretation per turn&lt;/font&gt;" vertex="1">
+          <mxGeometry height="930" width="930" x="640" y="220" as="geometry" />
+        </mxCell>
+        <mxCell id="per" parent="cai" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=34;fontStyle=1;strokeWidth=2;fillColor=#dff0d8;" value="Mandatory Perception" vertex="1">
+          <mxGeometry height="250" width="260" x="30" y="106" as="geometry" />
+        </mxCell>
+        <mxCell id="per_0" parent="per" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Interpret Intent" vertex="1">
+          <mxGeometry height="34" width="220" x="20" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="per_1" parent="per" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Detect Emotional Signal" vertex="1">
+          <mxGeometry height="34" width="220" x="20" y="95" as="geometry" />
+        </mxCell>
+        <mxCell id="per_2" parent="per" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Detect Request Type" vertex="1">
+          <mxGeometry height="34" width="220" x="20" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="per_3" parent="per" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Detect Topic / Ambiguity" vertex="1">
+          <mxGeometry height="34" width="220" x="20" y="185" as="geometry" />
+        </mxCell>
+        <mxCell id="gap" parent="cai" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=34;fontStyle=1;strokeWidth=2;fillColor=#fcf8e3;" value="Context Gap Analyzer" vertex="1">
+          <mxGeometry height="350" width="260" x="660" y="55" as="geometry" />
+        </mxCell>
+        <mxCell id="gap_0" parent="gap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Need Memory?" vertex="1">
+          <mxGeometry height="30" width="220" x="20" y="48" as="geometry" />
+        </mxCell>
+        <mxCell id="gap_1" parent="gap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Need Relationship History?" vertex="1">
+          <mxGeometry height="30" width="220" x="20" y="88" as="geometry" />
+        </mxCell>
+        <mxCell id="gap_2" parent="gap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Need Knowledge?" vertex="1">
+          <mxGeometry height="30" width="220" x="20" y="128" as="geometry" />
+        </mxCell>
+        <mxCell id="gap_3" parent="gap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Need Social Context?" vertex="1">
+          <mxGeometry height="30" width="220" x="20" y="168" as="geometry" />
+        </mxCell>
+        <mxCell id="gap_4" parent="gap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Need Threat Analysis?" vertex="1">
+          <mxGeometry height="30" width="220" x="20" y="208" as="geometry" />
+        </mxCell>
+        <mxCell id="gap_5" parent="gap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Need Manipulation Analysis?" vertex="1">
+          <mxGeometry height="30" width="220" x="20" y="248" as="geometry" />
+        </mxCell>
+        <mxCell id="gap_6" parent="gap" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Need Topic Sensitivity?" vertex="1">
+          <mxGeometry height="30" width="220" x="20" y="288" as="geometry" />
+        </mxCell>
+        <mxCell id="tools" parent="cai" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=34;fontStyle=1;strokeWidth=2;fillColor=#f2dede;" value="Optional Agent Tools" vertex="1">
+          <mxGeometry height="620" width="250" x="350" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_0" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Recall Memory" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_1" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Recall Relationship History" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="84" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_2" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Recall Personal Knowledge" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="123" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_3" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Evaluate Social Context" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="162" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_4" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Detect Threat" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="201" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_5" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Detect Manipulation" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_6" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Detect Topic Sensitivity" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="279" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_7" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Evaluate Trust / Respect Impact" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="318" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_8" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Evaluate Attraction Impact" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="357" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_9" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Evaluate Fear / Suspicion" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="396" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_10" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Evaluate Internal Conflict" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="435" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_11" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Belief Updates" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="474" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_12" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Long-Term Goal Updates" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="513" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_13" parent="tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Planning" vertex="1">
+          <mxGeometry height="30" width="215" x="15" y="552" as="geometry" />
+        </mxCell>
+        <mxCell id="mot" parent="1" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=34;fontStyle=1;strokeWidth=2;fillColor=#dff0d8;" value="Motivation &amp;amp; Strategy" vertex="1">
+          <mxGeometry height="560" width="320" x="1690" y="439" as="geometry" />
+        </mxCell>
+        <mxCell id="mot_0" parent="mot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Evaluate Emotion" vertex="1">
+          <mxGeometry height="34" width="260" x="25" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="mot_1" parent="mot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Select Conversation Goal" vertex="1">
+          <mxGeometry height="34" width="260" x="25" y="105" as="geometry" />
+        </mxCell>
+        <mxCell id="mot_2" parent="mot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Assess Risk" vertex="1">
+          <mxGeometry height="34" width="260" x="25" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="mot_3" parent="mot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Decide Disclosure Level" vertex="1">
+          <mxGeometry height="34" width="260" x="25" y="215" as="geometry" />
+        </mxCell>
+        <mxCell id="mot_4" parent="mot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Select Social Strategy" vertex="1">
+          <mxGeometry height="34" width="260" x="25" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="mot_5" parent="mot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Select Tone" vertex="1">
+          <mxGeometry height="34" width="260" x="25" y="325" as="geometry" />
+        </mxCell>
+        <mxCell id="mot_6" parent="mot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Select Verbosity" vertex="1">
+          <mxGeometry height="34" width="260" x="25" y="380" as="geometry" />
+        </mxCell>
+        <mxCell id="mot_7" parent="mot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" value="Select Conversation Move" vertex="1">
+          <mxGeometry height="34" width="260" x="25" y="435" as="geometry" />
+        </mxCell>
+        <mxCell id="resp" parent="1" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=34;fontStyle=1;strokeWidth=2;fillColor=#d9edf7;" value="Response" vertex="1">
+          <mxGeometry height="140" width="220" x="2140" y="649" as="geometry" />
+        </mxCell>
+        <mxCell id="resp_list" parent="resp" style="whiteSpace=wrap;html=1;strokeColor=none;fillColor=none;align=center;" value="Generate NPC Reply" vertex="1">
+          <mxGeometry height="40" width="180" x="20" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="term" parent="1" style="swimlane;whiteSpace=wrap;html=1;rounded=1;startSize=34;fontStyle=1;strokeWidth=2;fillColor=#eadcf8;" value="Terminal State Updates" vertex="1">
+          <mxGeometry height="330" width="290" x="2420" y="554" as="geometry" />
+        </mxCell>
+        <mxCell id="term_list" parent="term" style="whiteSpace=wrap;html=1;strokeColor=none;fillColor=none;align=left;spacingLeft=10;" value="Update Emotional State&lt;br&gt;Update Relationship State&lt;br&gt;Update Belief State&lt;br&gt;Update Goal State&lt;br&gt;Store Memory&lt;br&gt;External Actions" vertex="1">
+          <mxGeometry height="230" width="250" x="15" y="55" as="geometry" />
+        </mxCell>
+        <mxCell id="final" parent="1" style="rounded=1;whiteSpace=wrap;html=1;strokeWidth=2;fillColor=#d0d0d0;" value="Final State&lt;br&gt;&lt;br&gt;Persisted NPC State&lt;br&gt;World State&lt;br&gt;Future Context" vertex="1">
+          <mxGeometry height="160" width="240" x="2790" y="639" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="input" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" target="ctx" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="ctx" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" target="cai" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="mot" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" target="resp" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="resp" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" target="term" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="term" style="endArrow=block;html=1;rounded=0;strokeWidth=3;strokeColor=#6a1b9a;" target="final" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="per" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" target="gap" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="gap" style="endArrow=block;html=1;rounded=0;strokeWidth=2;" target="tools" value="if gap exists">
+          <mxGeometry relative="1" x="0.4038" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="1430" y="779" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="gap" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#008000;" target="mot" value="no optional tools">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="tools" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#d79b00;dashed=1;" target="per" value="reinterpret once">
+          <mxGeometry relative="1" x="0.5762" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="800" y="780" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

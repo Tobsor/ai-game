@@ -37,6 +37,9 @@ class NPCAgent:
             }
 
     def create_agent_prompt(self, name: str, situation: str, pl_list: str, sentiment: str, prompt: str):
+        # TODO: Redesign the thinking level from a meta level:
+        # Perception: Player intent (Determine what the player is trying to achieve), Emotional signal (How does the player seem to feel?), Social context (What social situation am I in?)
+        # Memory: Past memory (Search for related past events.), Relationship history (What has happened between me and this player?), personal knowledge (What do I know about this topic?)
         return f"""
             You are the internal decision-making agent for the NPC {name}.
             You DO NOT generate dialogue. You DO NOT roleplay. 

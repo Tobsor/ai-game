@@ -55,6 +55,8 @@ async def chat(websocket: WebSocket) -> None:
     try:
         logger.info("Awaiting first request")
         payload = await websocket.receive_text()
+        
+        # Received NPC interaction request
         data = json.loads(payload)
         request = InitChatRequest(**data)
         logger.info("Conversation parameter initialized")

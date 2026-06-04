@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import WebSocket
 from server_models import ChatRequest
 import json
+from workflow import TurnInput, TurnPipeline
 
 from logger import get_logger
 
@@ -45,6 +46,7 @@ class Character:
         self.db = ChromaDBHelper()
         self.agent = NPCAgent()
         self.talk_ongoing = True
+        self.pipeline = TurnPipeline(self)
 
         self.sentiment = self.compute_sentiment()
 
@@ -134,9 +136,10 @@ class Character:
         """
 
     def compute_sentiment(self):
-        prompt = "How does {{char}} feel about {{user}}? What is {{cahr}} sentiment towards {{user}}?"
+        prompt = "How does {{char}} feel about {{user}}? What is {{char}} sentiment towards {{user}}?"
         filter = self.get_sentiment()
 
+        # TODO: Querying sentiment via similarity search is probably not reasonable. Instead collect statically every sentiment snippet and compute an LLM response for the sentiment.
         return self.db.query_text(prompt=prompt, filter=filter)
     
     def get_sentiment(self):
@@ -351,61 +354,46 @@ class Character:
         if(prompt.strip() == ""):
             return ""
 
-        logger.trace("Invoking agent")
-        tool_calls = self.agent.prompt_agent(
-            prompt=prompt,
-            sentiment=self.sentiment,
-            name=self.name,
-            pl_list=self.pl_list,
-            situation=self.situation,
-            tools=[
-                self.cognitive_action,
-                self.generate_npc_intention,
-                self.immediate_action,
-                self.change_sentiment,
-                self.flag_jailbreak
-            ]
-        )
+        result = self.pipeline.run(TurnInput(prompt=prompt))
+        self.apply_turn_updates(result.terminal_update)
 
-        available_tools = [
-            "cognitive_action",
-            "generate_npc_intention",
-            "immediate_action",
-            "change_sentiment",
-            "flag_jailbreak"
-        ]
-        filter = None
-        intention = ""
+        return result.response.reply
 
-        logger.trace("Invoking tools")
-        if(tool_calls != None):
-            for tool_call in tool_calls:
-                args = tool_call.function.arguments
-                tool = tool_call.function.name
+    def apply_turn_updates(self, terminal_update):
+        logger.trace("Applying terminal updates")
 
-                if tool not in available_tools:
-                    logger.error("Invalid tool invocation detected: %s", tool)
-                    continue
+        if terminal_update.sentiment is not None:
+            self.change_sentiment(
+                new_sentiment=terminal_update.sentiment,
+                reasoning=terminal_update.sentiment_reasoning
+            )
 
-                match tool:
-                    case "cognitive_action":
-                        filter = self.cognitive_action(**args)
-                    case "generate_npc_intention":
-                        intention += self.generate_npc_intention(**args)
-                    case "change_sentiment":
-                        self.change_sentiment(**args)
-                    case "immediate_action":
-                        self.immediate_action(**args)
+        self.immediate_action(terminal_update.immediate_action)
+        self.update_relationship(terminal_update.relationship_update)
+        self.update_beliefs(terminal_update.belief_update)
+        self.update_goals(terminal_update.goal_update)
 
-        logger.trace("Generating context")
-        context = self.db.query_text(prompt=prompt, filter=filter)
+        if terminal_update.store_memory:
+            self.store_memory()
 
-        logger.trace("Generating prompt")
-        final_prompt = self.create_answer_prompt(prompt, self.sentiment, intention, context)
+        self.trigger_external_actions(terminal_update.external_actions)
 
-        logger.debug("Final prompt: %s", final_prompt)
+    def update_relationship(self, relationship_update):
+        # TODO: Persist relationship state changes returned by the terminal update stage.
+        return relationship_update
 
-        logger.trace("Generating response")
-        response = self.db.generate_text(final_prompt)
+    def update_beliefs(self, belief_update):
+        # TODO: Persist belief state changes returned by the terminal update stage.
+        return belief_update
 
-        return response 
+    def update_goals(self, goal_update):
+        # TODO: Persist goal state changes returned by the terminal update stage.
+        return goal_update
+
+    def store_memory(self):
+        # TODO: Persist a conversation memory so it can be used by future retrieval stages.
+        return False
+
+    def trigger_external_actions(self, actions: list[str]):
+        # TODO: Hand off non-dialogue world actions to the game simulation layer.
+        return actions
