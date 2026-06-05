@@ -11,6 +11,7 @@ logger = get_logger(__name__)
 class RoleProviderConfig:
     provider: str
     model: str
+    hf_provider: str = ""
     base_url: str = ""
     api_key_env: str = ""
     timeout_seconds: int = 60
@@ -65,18 +66,24 @@ BUILT_IN_PROFILES: dict[str, AISettings] = {
         decision_llm=RoleProviderConfig(
             provider="huggingface",
             model="Qwen/Qwen3-4B-Instruct-2507:nscale",
+            api_key_env="HF_TOKEN",
         ),
         response_llm=RoleProviderConfig(
-            provider="ollama",
-            model="nollama/mythomax-l2-13b:Q4_K_M",
+            provider="huggingface",
+            model="Gryphe/MythoMax-L2-13b",
+            hf_provider="featherless-ai",
+            api_key_env="HF_TOKEN",
         ),
         judge_llm=RoleProviderConfig(
-            provider="ollama",
-            model="mistral:7b-instruct-v0.3-q8_0",
+            provider="huggingface",
+            model="mistralai/Mistral-7B-Instruct-v0.2:featherless-ai",
+            api_key_env="HF_TOKEN",
         ),
         embedding_model=RoleProviderConfig(
-            provider="ollama",
-            model="mxbai-embed-large",
+            provider="huggingface",
+            model="mixedbread-ai/mxbai-embed-large-v1",
+            hf_provider="hf-inference",
+            api_key_env="HF_TOKEN",
         ),
         chroma=DEFAULT_CHROMA,
     ),
@@ -85,18 +92,21 @@ BUILT_IN_PROFILES: dict[str, AISettings] = {
         decision_llm=RoleProviderConfig(
             provider="huggingface",
             model="",
+            hf_provider="hf-inference",
             base_url="",
             api_key_env="HF_TOKEN",
         ),
         response_llm=RoleProviderConfig(
             provider="huggingface",
             model="",
+            hf_provider="hf-inference",
             base_url="",
             api_key_env="HF_TOKEN",
         ),
         judge_llm=RoleProviderConfig(
             provider="huggingface",
             model="",
+            hf_provider="hf-inference",
             base_url="",
             api_key_env="HF_TOKEN",
         ),
@@ -111,24 +121,28 @@ BUILT_IN_PROFILES: dict[str, AISettings] = {
         decision_llm=RoleProviderConfig(
             provider="huggingface",
             model="",
+            hf_provider="hf-inference",
             base_url="",
             api_key_env="HF_TOKEN",
         ),
         response_llm=RoleProviderConfig(
             provider="huggingface",
             model="",
+            hf_provider="hf-inference",
             base_url="",
             api_key_env="HF_TOKEN",
         ),
         judge_llm=RoleProviderConfig(
             provider="huggingface",
             model="",
+            hf_provider="hf-inference",
             base_url="",
             api_key_env="HF_TOKEN",
         ),
         embedding_model=RoleProviderConfig(
             provider="huggingface",
             model="",
+            hf_provider="hf-inference",
             base_url="",
             api_key_env="HF_TOKEN",
         ),
@@ -147,6 +161,7 @@ def _get_env_int(name: str, default: int) -> int:
 def _override_role(prefix: str, config: RoleProviderConfig) -> RoleProviderConfig:
     provider = os.getenv(f"{prefix}_PROVIDER", config.provider)
     model = os.getenv(f"{prefix}_MODEL", config.model)
+    hf_provider = os.getenv(f"{prefix}_HF_PROVIDER", config.hf_provider)
     base_url = os.getenv(f"{prefix}_BASE_URL", config.base_url)
     api_key_env = os.getenv(f"{prefix}_API_KEY_ENV", config.api_key_env)
     timeout_seconds = _get_env_int(f"{prefix}_TIMEOUT_SECONDS", config.timeout_seconds)
@@ -154,6 +169,7 @@ def _override_role(prefix: str, config: RoleProviderConfig) -> RoleProviderConfi
     return RoleProviderConfig(
         provider=provider,
         model=model,
+        hf_provider=hf_provider,
         base_url=base_url,
         api_key_env=api_key_env,
         timeout_seconds=timeout_seconds,

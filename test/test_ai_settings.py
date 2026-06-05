@@ -55,3 +55,29 @@ class AISettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.decision_llm.provider, "huggingface")
         self.assertEqual(settings.decision_llm.model, "some-model")
+
+    def test_huggingface_provider_supports_hf_provider_override(self):
+        with patch.dict(os.environ, {
+            "AI_PROFILE": "local",
+            "DECISION_PROVIDER": "huggingface",
+            "DECISION_MODEL": "some-model",
+            "DECISION_HF_PROVIDER": "featherless-ai",
+        }, clear=True):
+            get_ai_settings.cache_clear()
+            settings = get_ai_settings()
+
+        self.assertEqual(settings.decision_llm.provider, "huggingface")
+        self.assertEqual(settings.decision_llm.hf_provider, "featherless-ai")
+
+    def test_hugging_face_remote_profile_uses_hf_provider_config(self):
+        with patch.dict(os.environ, {
+            "AI_PROFILE": "hugging_face__remote",
+        }, clear=True):
+            get_ai_settings.cache_clear()
+            settings = get_ai_settings()
+
+        self.assertEqual(settings.decision_llm.provider, "huggingface")
+        self.assertEqual(settings.decision_llm.hf_provider, "hf-inference")
+        self.assertEqual(settings.response_llm.provider, "huggingface")
+        self.assertEqual(settings.response_llm.hf_provider, "featherless-ai")
+        self.assertEqual(settings.embedding_model.api_key_env, "HF_TOKEN")

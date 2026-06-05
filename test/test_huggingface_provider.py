@@ -18,6 +18,7 @@ class HuggingFaceProviderTests(unittest.TestCase):
         self.config = RoleProviderConfig(
             provider="huggingface",
             model="test-model",
+            hf_provider="featherless-ai",
             api_key_env="HF_TOKEN",
             timeout_seconds=42,
         )
@@ -65,6 +66,10 @@ class HuggingFaceProviderTests(unittest.TestCase):
             response.tool_calls[0].function.arguments,
             {"normalized_user_prompt": "safe"},
         )
+        inference_client_cls.assert_called_with(
+            timeout=42.0,
+            provider="featherless-ai",
+        )
 
     @patch("ai.providers.InferenceClient")
     def test_embedding_provider_wraps_single_embedding_row(self, inference_client_cls):
@@ -85,6 +90,19 @@ class HuggingFaceProviderTests(unittest.TestCase):
         provider = HuggingFaceTextGenerationProvider(self.config)
 
         self.assertEqual(provider.generate("prompt"), "generated")
+
+    @patch("ai.providers.InferenceClient")
+    def test_hf_provider_is_optional(self, inference_client_cls):
+        config = RoleProviderConfig(
+            provider="huggingface",
+            model="test-model",
+            api_key_env="HF_TOKEN",
+            timeout_seconds=42,
+        )
+
+        HuggingFaceChatProvider(config)
+
+        inference_client_cls.assert_called_with(timeout=42.0)
 
 
 if __name__ == "__main__":

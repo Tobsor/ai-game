@@ -246,6 +246,8 @@ class HuggingFaceInferenceProviderBase:
         client_kwargs: dict[str, Any] = {
             "timeout": float(self.config.timeout_seconds),
         }
+        if self.config.hf_provider != "":
+            client_kwargs["provider"] = self.config.hf_provider
         if self.config.base_url != "":
             client_kwargs["base_url"] = self.config.base_url
         if api_key != "":
