@@ -23,6 +23,7 @@ class InitialContextStage:
         self.character = character
 
     def run(self, turn_input: TurnInput) -> InitialContext:
+        logger.verbose("Building initial context for %s", self.character.name)
         return InitialContext(
             character_name=self.character.name,
             situation=self.character.situation,
@@ -46,7 +47,11 @@ class InitialContextStage:
                 self.character.get_sentiment_filter(),
             ]
         }
-        relation_summary = self.character.db.query_text(prompt=prompt, filter=filter_value).strip()
+        relation_summary = self.character.db.query_text(
+            prompt=prompt,
+            filter=filter_value,
+            stage_name="InitialContextStage",
+        ).strip()
         if relation_summary == "":
             return ""
 
@@ -71,7 +76,11 @@ class InitialContextStage:
                 },
             ]
         }
-        goal_summary = self.character.db.query_text(prompt=prompt, filter=filter_value).strip()
+        goal_summary = self.character.db.query_text(
+            prompt=prompt,
+            filter=filter_value,
+            stage_name="InitialContextStage",
+        ).strip()
         if goal_summary == "":
             return []
 
@@ -91,6 +100,7 @@ class PerceptionStage:
         self.character = character
 
     def run(self, turn_input: TurnInput, initial_context: InitialContext) -> PerceptionResult:
+        logger.verbose("Running perception stage for prompt length=%s", len(turn_input.prompt))
         tool_calls = self.character.agent.prompt_agent(
             prompt=turn_input.prompt,
             sentiment=initial_context.sentiment,
@@ -104,6 +114,7 @@ class PerceptionStage:
                 self.character.change_sentiment,
                 self.character.flag_jailbreak,
             ],
+            stage_name="PerceptionStage",
         ) or []
 
         normalized_prompt = self.normalize_jailbreak_prompt(turn_input.prompt, tool_calls)
@@ -174,6 +185,7 @@ class GapAnalysisStage:
         self.character = character
 
     def run(self, perception: PerceptionResult) -> GapAnalysisResult:
+        logger.verbose("Running gap analysis with %s tool calls", len(perception.tool_calls))
         retrieval_actions = self.extract_retrieval_actions(perception.tool_calls)
         needs_memory = self.needs_memory(perception, retrieval_actions)
         needs_relationship = self.needs_relationship_context(perception, retrieval_actions)
@@ -247,6 +259,7 @@ class RetrievalStage:
         self.character = character
 
     def create_plan(self, perception: PerceptionResult, gap_analysis: GapAnalysisResult) -> RetrievalPlan:
+        logger.verbose("Creating retrieval plan")
         filters: list[dict[str, Any]] = []
 
         for tool_call in perception.tool_calls:
@@ -266,6 +279,7 @@ class RetrievalStage:
         )
 
     def run(self, plan: RetrievalPlan, gap_analysis: GapAnalysisResult) -> RetrievedContext:
+        logger.verbose("Running retrieval stage, requires_retrieval=%s", plan.requires_retrieval)
         if not plan.requires_retrieval:
             return RetrievedContext(
                 threat_analysis=self.analyze_threat(plan),
@@ -285,7 +299,11 @@ class RetrievalStage:
         relationship_context = self.recall_relationship(plan) if gap_analysis.needs_relationship_context else ""
         knowledge_context = self.recall_knowledge(plan) if gap_analysis.needs_knowledge else ""
         social_context = self.evaluate_social_context(plan) if gap_analysis.needs_social_context else ""
-        general_context = self.character.db.query_text(prompt=plan.prompt, filter=filter_value)
+        general_context = self.character.db.query_text(
+            prompt=plan.prompt,
+            filter=filter_value,
+            stage_name="RetrievalStage.run",
+        )
 
         combined_context = "\n".join([text for text in [
             general_context,
@@ -375,6 +393,7 @@ class StrategyStage:
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
     ) -> StrategyResult:
+        logger.verbose("Running strategy stage")
         intention = ""
         immediate_action = "keep_talking"
         new_sentiment = None
@@ -488,8 +507,9 @@ class ResponseStage:
             context=self.compose_context(initial_context, retrieved_context, strategy),
         )
 
+        logger.verbose("Response stage assembled final prompt")
         logger.debug("Final prompt: %s", final_prompt)
-        response = self.character.db.generate_text(final_prompt)
+        response = self.character.db.generate_text(final_prompt, stage_name="ResponseStage")
 
         return ResponseResult(reply=response, final_prompt=final_prompt)
 
@@ -540,6 +560,7 @@ class TerminalUpdateStage:
         strategy: StrategyResult,
         response: ResponseResult,
     ) -> TerminalUpdateResult:
+        logger.verbose("Running terminal update stage")
         return TerminalUpdateResult(
             sentiment=strategy.new_sentiment,
             sentiment_reasoning=strategy.sentiment_reasoning,

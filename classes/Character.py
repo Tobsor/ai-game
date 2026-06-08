@@ -78,10 +78,10 @@ class Character:
             <|model|>{{model's response goes here}}
         """
 
-        greeting = self.db.generate_text(greeting_prompt)
+        greeting = self.db.generate_text(greeting_prompt, stage_name="Greeting")
         await socket.send_json({ "event": "message", "data": greeting })
 
-        logger.trace("Greeting sent")
+        logger.verbose("Greeting completed for %s", self.name)
 
         while self.talk_ongoing:
             user_prompt = None
@@ -107,7 +107,7 @@ class Character:
 
             answer = self.prompt(prompt=user_prompt)
             
-            logger.trace("Responding to client")
+            logger.verbose("Response sent to client for %s", self.name)
             await socket.send_json({ "event": "message", "data": answer })
 
     def create_answer_prompt(self, prompt: str, sentiment: str, intention: str, context: str):
@@ -269,7 +269,7 @@ class Character:
             An $or metadata construction including all filters to be applied when quering documents on chromadb
         """
 
-        logger.trace("Invoked cognitive action with: %s", actions)
+        logger.verbose("Invoked cognitive action with: %s", actions)
         if isinstance(actions, list) == False:
             logger.error("Invalid args provided to cognitive action: %s", actions)
             return None
@@ -316,7 +316,7 @@ class Character:
             intention: A list of intentions which as a sum descrive the npc's intention
             reasoning: A short explanation on what intention the npc follows when responding.
         """
-        logger.trace("Invoked npc intention with: %s", intention)
+        logger.verbose("Invoked npc intention with: %s", intention)
         if isinstance(intention, list) == False:
             logger.error("Malformed intention: %s", intention)
             return ""
@@ -333,7 +333,7 @@ class Character:
         Returns:
             Boolean whether the NPC continues the conversation with the user or not
         """
-        logger.trace("Invoked immediate action with: %s", action)
+        logger.verbose("Invoked immediate action with: %s", action)
         try:
             NPCAction(action)
         except ValueError:
@@ -350,7 +350,7 @@ class Character:
             new_sentiment: A short explanation on how the character now feels after that user interaction
             reasoning: A short explanation on why the new state was selected and how the character now feels
         """
-        logger.trace("Invoked new sentiment with: %s", new_sentiment)
+        logger.verbose("Invoked new sentiment with: %s", new_sentiment)
         try: 
             Sentiment(new_sentiment)
         except ValueError:
@@ -380,7 +380,7 @@ class Character:
         return result.response.reply
 
     def apply_turn_updates(self, terminal_update):
-        logger.trace("Applying terminal updates")
+        logger.verbose("Applying terminal updates")
 
         if terminal_update.sentiment is not None:
             self.change_sentiment(

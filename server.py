@@ -1,11 +1,13 @@
 import csv
 import os
 from pathlib import Path
+import argparse
 
 import json
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
+import uvicorn
 from server_models import InitChatRequest
 
 from classes.Character import Character
@@ -19,8 +21,8 @@ DEFAULT_SITUATION = (
 )
 
 app = FastAPI(title="AI Game NPC Service")
-configure_logging()
 logger = get_logger(__name__)
+app.state.persist_enabled = False
 
 
 def load_characters(path: Path) -> list[dict[str, str]]:
@@ -51,6 +53,7 @@ async def chat(websocket: WebSocket) -> None:
     logger.info("Websocket connection received")
 
     payload = ""
+    conversation_token = None
 
     try:
         logger.info("Awaiting first request")
@@ -79,6 +82,19 @@ async def chat(websocket: WebSocket) -> None:
 
     situation = request.situation or DEFAULT_SITUATION
     npc = Character(character_data, situation)
+    if bool(app.state.persist_enabled):
+        conversation_token = logger.start_conversation_trace(
+            root_dir="logs/conversations",
+            character_name=npc.name,
+            profile=npc.ai_settings.profile,
+            providers={
+                "decision": f"{npc.ai_settings.decision_llm.provider}:{npc.ai_settings.decision_llm.model}",
+                "response": f"{npc.ai_settings.response_llm.provider}:{npc.ai_settings.response_llm.model}",
+                "judge": f"{npc.ai_settings.judge_llm.provider}:{npc.ai_settings.judge_llm.model}",
+                "embedding": f"{npc.ai_settings.embedding_model.provider}:{npc.ai_settings.embedding_model.model}",
+            },
+            persist_enabled=True,
+        )
 
     try:
         logger.info("Conversation initialized with: %s", request.name)
@@ -92,16 +108,26 @@ async def chat(websocket: WebSocket) -> None:
     except Exception as exc:
         await websocket.send_json({"event": "error", "data": str(exc)})
     finally:
+        if conversation_token is not None:
+            logger.reset_conversation_id(conversation_token)
         logger.info("Conversation concluded")
         if websocket.client_state == WebSocketState.CONNECTED:
             await websocket.close()
 
-def main() -> None:
-    import uvicorn
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="AI Game NPC Service")
+    parser.add_argument("--persist", action="store_true", help="Persist per-conversation AI trace files")
+    parser.add_argument("--verbose", action="store_true", help="Force log level to VERBOSE")
+    return parser.parse_args(argv)
 
+
+def main() -> None:
+    args = parse_args()
     host = os.getenv("AIGAME_HOST", "127.0.0.1")
     port = int(os.getenv("AIGAME_PORT", "8000"))
-    configure_logging()
+    configure_logging("VERBOSE" if args.verbose else None)
+    app.state.persist_enabled = args.persist
+    logger.info("Server startup configured: persist=%s verbose=%s", args.persist, args.verbose)
     uvicorn.run(app, host=host, port=port)
 
 if __name__ == "__main__":

@@ -1,6 +1,9 @@
 import chromadb
 from models import Metadata
 from ai import AISettings, create_chat_provider, create_embedding_provider, get_ai_settings
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 class ChromaDBHelper:
     def __init__(self, settings: AISettings | None = None):
@@ -69,20 +72,43 @@ class ChromaDBHelper:
 
         return parsed_docs
     
-    def query_text(self, prompt: str, filter = None):
+    def query_text(self, prompt: str, filter = None, stage_name: str = "RetrievalStage"):
         docs = self.query_docs(prompt=prompt, filter=filter)
 
         if(docs == None):
+            logger.conversation_event(
+                stage_name=stage_name,
+                event="query_text",
+                payload={"prompt": prompt, "filter": filter},
+                result={"documents": [], "text": ""},
+            )
             return ""
-        
-        return "\n".join(self.parse_retrieved_docs(docs))
+
+        result = "\n".join(self.parse_retrieved_docs(docs))
+        logger.conversation_event(
+            stage_name=stage_name,
+            event="query_text",
+            payload={"prompt": prompt, "filter": filter},
+            result={"documents": docs, "text": result},
+        )
+
+        return result
     
-    def generate_text(self, prompt: str) -> str:
+    def generate_text(self, prompt: str, stage_name: str = "ResponseStage") -> str:
         new_message = {"role": "user", "content": prompt}
         self.messages.append(new_message)
 
         res = self.response_provider.chat(messages=self.messages)
         message = {"role": "assistant", "content": res.content}
         self.messages.append(message)
+
+        logger.conversation_event(
+            stage_name=stage_name,
+            event="generate_text",
+            payload={"prompt": prompt},
+            ai_request={"messages": list(self.messages[:-1])},
+            ai_response={"content": res.content, "tool_calls": res.tool_calls},
+            result={"reply": res.content},
+        )
 
         return res.content

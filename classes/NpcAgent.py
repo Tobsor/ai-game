@@ -96,7 +96,16 @@ class NPCAgent:
             {prompt}
         """
 
-    def prompt_agent(self, name: str, pl_list: str, situation: str, prompt: str, sentiment: str, tools: list[Callable] | None):
+    def prompt_agent(
+        self,
+        name: str,
+        pl_list: str,
+        situation: str,
+        prompt: str,
+        sentiment: str,
+        tools: list[Callable] | None,
+        stage_name: str = "PerceptionStage",
+    ):
         agent_prompt = self.create_agent_prompt(
             name=name,
             situation=situation,
@@ -113,5 +122,24 @@ class NPCAgent:
         )
 
         logger.debug("Generated payload: %s", res)
+        logger.conversation_event(
+            stage_name=stage_name,
+            event="decision_model",
+            payload={
+                "name": name,
+                "situation": situation,
+                "sentiment": sentiment,
+                "prompt": prompt,
+            },
+            ai_request={
+                "messages": [system_message],
+                "tools": [tool.__name__ for tool in tools] if tools is not None else [],
+            },
+            ai_response={
+                "content": res.content,
+                "tool_calls": res.tool_calls,
+            },
+            result={"tool_calls": res.tool_calls},
+        )
 
         return res.tool_calls
