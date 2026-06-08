@@ -55,6 +55,19 @@ class ChromaDBHelper:
             return None
         
         return documents
+
+    def parse_retrieved_docs(self, documents) -> list[str]:
+        parsed_docs: list[str] = []
+
+        for doc_group in documents:
+            if not isinstance(doc_group, list):
+                continue
+            for doc in doc_group:
+                snippet = str(doc).strip()
+                if snippet != "":
+                    parsed_docs.append(snippet)
+
+        return parsed_docs
     
     def query_text(self, prompt: str, filter = None):
         docs = self.query_docs(prompt=prompt, filter=filter)
@@ -62,9 +75,7 @@ class ChromaDBHelper:
         if(docs == None):
             return ""
         
-        docs_text = [doc[0] for doc in docs]
-        
-        return  "\n".join(docs_text)
+        return "\n".join(self.parse_retrieved_docs(docs))
     
     def generate_text(self, prompt: str) -> str:
         new_message = {"role": "user", "content": prompt}

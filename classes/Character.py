@@ -143,13 +143,13 @@ class Character:
         """
 
     def compute_sentiment(self):
-        prompt = "How does {{char}} feel about {{user}}? What is {{char}} sentiment towards {{user}}?"
-        filter = self.get_sentiment()
+        sentiment = self.get_sentiment()
+        if sentiment.strip() == "":
+            return ""
 
-        # TODO: Querying sentiment via similarity search is probably not reasonable. Instead collect statically every sentiment snippet and compute an LLM response for the sentiment.
-        return self.db.query_text(prompt=prompt, filter=filter)
+        return sentiment
     
-    def get_sentiment(self):
+    def get_sentiment_filter(self):
         return {
            "$and" : [
                 {
@@ -163,6 +163,19 @@ class Character:
                 }
             ]
         }
+
+    def get_sentiment(self):
+        results = self.db.db.get(
+            where=self.get_sentiment_filter(),
+            limit=3,
+            include=["documents"],
+        )
+        documents = results.get("documents") or []
+        if not isinstance(documents, list):
+            return ""
+
+        sentiment_entries = [str(doc).strip() for doc in reversed(documents) if str(doc).strip()]
+        return "\n".join(sentiment_entries)
     
     def get_memories(self):
         return {
@@ -289,7 +302,7 @@ class Character:
                 case CognitiveAction.SOCIAL.value:
                     """ The character looks up information to engage socially into the conversation with the user """
                     all_filters.append(self.get_relations())
-                    all_filters.append(self.get_sentiment())
+                    all_filters.append(self.get_sentiment_filter())
 
         return {
             "$or": all_filters

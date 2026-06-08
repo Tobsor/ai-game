@@ -66,24 +66,25 @@ BUILT_IN_PROFILES: dict[str, AISettings] = {
         decision_llm=RoleProviderConfig(
             provider="huggingface",
             model="Qwen/Qwen3-4B-Instruct-2507:nscale",
-            api_key_env="HF_TOKEN",
+            api_key_env="HF_API_KEY",
+            base_url="https://router.huggingface.co/v1"
         ),
         response_llm=RoleProviderConfig(
             provider="huggingface",
             model="Gryphe/MythoMax-L2-13b",
             hf_provider="featherless-ai",
-            api_key_env="HF_TOKEN",
+            api_key_env="HF_API_KEY",
         ),
         judge_llm=RoleProviderConfig(
             provider="huggingface",
             model="mistralai/Mistral-7B-Instruct-v0.2:featherless-ai",
-            api_key_env="HF_TOKEN",
+            api_key_env="HF_API_KEY",
         ),
         embedding_model=RoleProviderConfig(
             provider="huggingface",
             model="mixedbread-ai/mxbai-embed-large-v1",
             hf_provider="hf-inference",
-            api_key_env="HF_TOKEN",
+            api_key_env="HF_API_KEY",
         ),
         chroma=DEFAULT_CHROMA,
     ),
@@ -94,21 +95,21 @@ BUILT_IN_PROFILES: dict[str, AISettings] = {
             model="",
             hf_provider="hf-inference",
             base_url="",
-            api_key_env="HF_TOKEN",
+            api_key_env="HF_API_KEY",
         ),
         response_llm=RoleProviderConfig(
             provider="huggingface",
             model="",
             hf_provider="hf-inference",
             base_url="",
-            api_key_env="HF_TOKEN",
+            api_key_env="HF_API_KEY",
         ),
         judge_llm=RoleProviderConfig(
             provider="huggingface",
             model="",
             hf_provider="hf-inference",
             base_url="",
-            api_key_env="HF_TOKEN",
+            api_key_env="HF_API_KEY",
         ),
         embedding_model=RoleProviderConfig(
             provider="ollama",
@@ -123,28 +124,28 @@ BUILT_IN_PROFILES: dict[str, AISettings] = {
             model="",
             hf_provider="hf-inference",
             base_url="",
-            api_key_env="HF_TOKEN",
+            api_key_env="HF_API_KEY",
         ),
         response_llm=RoleProviderConfig(
             provider="huggingface",
             model="",
             hf_provider="hf-inference",
             base_url="",
-            api_key_env="HF_TOKEN",
+            api_key_env="HF_API_KEY",
         ),
         judge_llm=RoleProviderConfig(
             provider="huggingface",
             model="",
             hf_provider="hf-inference",
             base_url="",
-            api_key_env="HF_TOKEN",
+            api_key_env="HF_API_KEY",
         ),
         embedding_model=RoleProviderConfig(
             provider="huggingface",
             model="",
             hf_provider="hf-inference",
             base_url="",
-            api_key_env="HF_TOKEN",
+            api_key_env="HF_API_KEY",
         ),
         chroma=DEFAULT_CHROMA,
     ),
@@ -163,7 +164,7 @@ def _override_role(prefix: str, config: RoleProviderConfig) -> RoleProviderConfi
     model = os.getenv(f"{prefix}_MODEL", config.model)
     hf_provider = os.getenv(f"{prefix}_HF_PROVIDER", config.hf_provider)
     base_url = os.getenv(f"{prefix}_BASE_URL", config.base_url)
-    api_key_env = os.getenv(f"{prefix}_API_KEY_ENV", config.api_key_env)
+    api_key_env = os.getenv(config.api_key_env)
     timeout_seconds = _get_env_int(f"{prefix}_TIMEOUT_SECONDS", config.timeout_seconds)
 
     return RoleProviderConfig(

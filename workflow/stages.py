@@ -36,12 +36,46 @@ class InitialContextStage:
         )
 
     def build_relationship_summary(self) -> str:
-        # TODO: Build a persistent relationship summary from conversation and world state.
-        return ""
+        prompt = (
+            f"What is {self.character.name}'s relationship to the player? "
+            "Recall relevant relationship history, social context, and current sentiment."
+        )
+        filter_value = {
+            "$or": [
+                self.character.get_relations(),
+                self.character.get_sentiment_filter(),
+            ]
+        }
+        relation_summary = self.character.db.query_text(prompt=prompt, filter=filter_value).strip()
+        if relation_summary == "":
+            return ""
+
+        return "Relationship to player:\n" + relation_summary
 
     def get_active_goals(self) -> list[str]:
-        # TODO: Load active NPC goals from persistent game state.
-        return []
+        prompt = (
+            f"Summarize {self.character.name}'s core values, morality, short term goals, "
+            "mid term goals, and long term goals based only on the retrieved character knowledge. "
+            "Return a compact plain-text summary."
+        )
+        filter_value = {
+            "$and": [
+                {
+                    "name": self.character.name,
+                },
+                {
+                    "type": "character",
+                },
+                {
+                    "category": "knowledge",
+                },
+            ]
+        }
+        goal_summary = self.character.db.query_text(prompt=prompt, filter=filter_value).strip()
+        if goal_summary == "":
+            return []
+
+        return [goal_summary]
 
     def get_recent_turns(self) -> list[str]:
         # TODO: Summarize recent turns into a compact cross-turn context block.

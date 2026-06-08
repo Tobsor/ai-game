@@ -116,6 +116,19 @@ def _extract_message_tool_calls(message: Any) -> Any:
     return getattr(message, "tool_calls", None)
 
 
+def _flatten_messages_to_prompt(messages: list[dict[str, Any]]) -> str:
+    prompt_parts: list[str] = []
+
+    for message in messages:
+        role = str(message.get("role", "user")).strip() or "user"
+        content = _extract_message_content(message).strip()
+        if content == "":
+            continue
+        prompt_parts.append(f"{role}: {content}")
+
+    return "\n\n".join(prompt_parts)
+
+
 def _coerce_embedding_payload(embedding: Any) -> list[float]:
     if hasattr(embedding, "tolist"):
         embedding = embedding.tolist()
@@ -241,7 +254,7 @@ class HuggingFaceInferenceProviderBase:
 
         api_key = ""
         if self.config.api_key_env != "":
-            api_key = os.getenv(self.config.api_key_env, "")
+            api_key = self.config.api_key_env
 
         client_kwargs: dict[str, Any] = {
             "timeout": float(self.config.timeout_seconds),
@@ -258,6 +271,15 @@ class HuggingFaceInferenceProviderBase:
 
 class HuggingFaceChatProvider(HuggingFaceInferenceProviderBase):
     def chat(self, messages: list[dict[str, Any]], tools: list[Any] | None = None) -> ChatCompletionResult:
+        if self.config.hf_provider == "featherless-ai":
+            prompt = _flatten_messages_to_prompt(messages)
+            result = self.client.text_generation(
+                prompt=prompt,
+                model=self.config.model,
+            )
+            content = result if isinstance(result, str) else str(result)
+            return ChatCompletionResult(content=content, tool_calls=[])
+
         kwargs: dict[str, Any] = {
             "messages": messages,
             "model": self.config.model,
@@ -347,7 +369,7 @@ def _build_headers(config: RoleProviderConfig) -> dict[str, str]:
     }
 
     if config.api_key_env != "":
-        api_key = os.getenv(config.api_key_env, "")
+        api_key = config.api_key_env
         if api_key != "":
             headers["Authorization"] = f"Bearer {api_key}"
 

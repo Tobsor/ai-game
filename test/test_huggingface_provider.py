@@ -35,9 +35,36 @@ class HuggingFaceProviderTests(unittest.TestCase):
         self.assertEqual(inference_client_cls.call_count, 3)
 
     @patch("ai.providers.InferenceClient")
+    def test_chat_provider_uses_text_generation_for_featherless(self, inference_client_cls):
+        client = MagicMock()
+        inference_client_cls.return_value = client
+        client.text_generation.return_value = "hello from featherless"
+
+        provider = HuggingFaceChatProvider(self.config)
+        response = provider.chat(messages=[
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "hi"},
+        ])
+
+        self.assertEqual(response.content, "hello from featherless")
+        self.assertEqual(response.tool_calls, [])
+        client.text_generation.assert_called_once_with(
+            prompt="system: You are helpful.\n\nuser: hi",
+            model="test-model",
+        )
+        client.chat_completion.assert_not_called()
+
+    @patch("ai.providers.InferenceClient")
     def test_chat_provider_normalizes_inference_client_output(self, inference_client_cls):
         client = MagicMock()
         inference_client_cls.return_value = client
+        config = RoleProviderConfig(
+            provider="huggingface",
+            model="test-model",
+            hf_provider="hf-inference",
+            api_key_env="HF_TOKEN",
+            timeout_seconds=42,
+        )
 
         message = MagicMock()
         message.content = "hello"
@@ -55,7 +82,7 @@ class HuggingFaceProviderTests(unittest.TestCase):
         result.choices = [choice]
         client.chat_completion.return_value = result
 
-        provider = HuggingFaceChatProvider(self.config)
+        provider = HuggingFaceChatProvider(config)
         response = provider.chat(messages=[{"role": "user", "content": "hi"}])
 
         self.assertEqual(response.content, "hello")
@@ -68,7 +95,7 @@ class HuggingFaceProviderTests(unittest.TestCase):
         )
         inference_client_cls.assert_called_with(
             timeout=42.0,
-            provider="featherless-ai",
+            provider="hf-inference",
         )
 
     @patch("ai.providers.InferenceClient")
