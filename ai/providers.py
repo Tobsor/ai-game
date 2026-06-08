@@ -276,6 +276,7 @@ class HuggingFaceChatProvider(HuggingFaceInferenceProviderBase):
             result = self.client.text_generation(
                 prompt=prompt,
                 model=self.config.model,
+                max_new_tokens=500
             )
             content = result if isinstance(result, str) else str(result)
             return ChatCompletionResult(content=content, tool_calls=[])
