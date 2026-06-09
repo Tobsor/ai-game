@@ -112,17 +112,13 @@ class PerceptionStage:
                 self.character.generate_npc_intention,
                 self.character.immediate_action,
                 self.character.change_sentiment,
-                self.character.flag_jailbreak,
             ],
             stage_name="PerceptionStage",
         ) or []
 
-        normalized_prompt = self.normalize_jailbreak_prompt(turn_input.prompt, tool_calls)
-
         return PerceptionResult(
             raw_prompt=turn_input.prompt,
-            normalized_prompt=normalized_prompt,
-            jailbreak_detected=normalized_prompt != turn_input.prompt,
+            normalized_prompt=turn_input.prompt,
             player_intent=self.detect_player_intent(turn_input.prompt, initial_context),
             player_emotion=self.detect_player_emotion(turn_input.prompt, initial_context),
             request_type=self.detect_request_type(turn_input.prompt, initial_context),
@@ -134,18 +130,6 @@ class PerceptionStage:
             tool_calls=tool_calls,
             retrieval_reasoning="",
         )
-
-    def normalize_jailbreak_prompt(self, prompt: str, tool_calls: list[Any]) -> str:
-        for tool_call in tool_calls:
-            if tool_call.function.name != "flag_jailbreak":
-                continue
-
-            normalized = tool_call.function.arguments.get("normalized_user_prompt", "").strip()
-            if normalized != "":
-                return normalized
-
-        # TODO: Replace this passthrough with robust jailbreak normalization rules.
-        return prompt
 
     def detect_player_intent(self, prompt: str, initial_context: InitialContext) -> str:
         # TODO: Infer the player's concrete conversation intent from the turn.

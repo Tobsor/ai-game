@@ -71,8 +71,8 @@ class HuggingFaceProviderTests(unittest.TestCase):
         message.tool_calls = [
             {
                 "function": {
-                    "name": "flag_jailbreak",
-                    "arguments": "{\"normalized_user_prompt\": \"safe\"}",
+                    "name": "cognitive_action",
+                    "arguments": "{\"actions\": [\"remember\"], \"reasoning\": \"Need context\"}",
                 }
             }
         ]
@@ -88,10 +88,10 @@ class HuggingFaceProviderTests(unittest.TestCase):
         self.assertEqual(response.content, "hello")
         self.assertEqual(len(response.tool_calls), 1)
         self.assertIsInstance(response.tool_calls[0], NormalizedToolCall)
-        self.assertEqual(response.tool_calls[0].function.name, "flag_jailbreak")
+        self.assertEqual(response.tool_calls[0].function.name, "cognitive_action")
         self.assertEqual(
             response.tool_calls[0].function.arguments,
-            {"normalized_user_prompt": "safe"},
+            {"actions": ["remember"], "reasoning": "Need context"},
         )
         inference_client_cls.assert_called_with(
             timeout=42.0,

@@ -23,7 +23,6 @@ class PromptCategory(Enum):
     SENTIMENT = "sentiment"
     LORE = "lore"
     MANIPULATION = "manipulation"
-    JAILBREAK = "jailbreak"
     PAST = "past"
 
 class MetadataCategory(Enum):

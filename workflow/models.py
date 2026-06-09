@@ -24,7 +24,6 @@ class InitialContext:
 class PerceptionResult:
     raw_prompt: str
     normalized_prompt: str
-    jailbreak_detected: bool = False
     player_intent: str = "unknown"
     player_emotion: str = "neutral"
     request_type: str = "general"

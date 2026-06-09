@@ -66,7 +66,7 @@ class TurnPipeline:
             self._log_stage_completion(
                 stage_name,
                 perception,
-                f"tool_calls={len(perception.tool_calls)}, jailbreak_detected={perception.jailbreak_detected}",
+                f"tool_calls={len(perception.tool_calls)}, normalized_prompt_length={len(perception.normalized_prompt)}",
             )
 
             stage_name = "GapAnalysisStage"
