@@ -161,14 +161,10 @@ class AgentTest:
 
         logger.info("Start generating NPC answers")
         for (i, prompt) in enumerate(prompts):
-            prompt.npc_response = character.agent.prompt_agent(
-                name=character.name,
-                pl_list=character.pl_list,
-                situation=character.situation,
+            prompt.npc_response = character.agent.run_prompt(
                 prompt=prompt.user_query,
-                sentiment=character.sentiment,
                 tools=tools
-            )
+            ).tool_calls
 
             all_prompts.append(prompt)
             logger.info("Generated NPC answers: %s / %s", i, len(prompts))

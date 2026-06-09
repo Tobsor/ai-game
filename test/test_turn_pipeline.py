@@ -1,12 +1,15 @@
 import unittest
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from ai import ChatCompletionResult
 from logger import configure_logging, get_logger
 from workflow.models import TurnInput
 from workflow.pipeline import TurnPipeline
+from workflow.stages import LLMStage, Stage
 
 test_logger = get_logger(__name__)
 
@@ -23,20 +26,69 @@ class FakeToolCall:
 
 
 class FakeAgent:
-    def __init__(self, tool_calls=None):
+    def __init__(
+        self,
+        tool_calls=None,
+        gap_content: str | None = None,
+        gap_tool_calls=None,
+        perception_content: str | None = None,
+    ):
         self.tool_calls = tool_calls or []
+        self.gap_content = gap_content
+        self.gap_tool_calls = gap_tool_calls or []
+        self.perception_content = perception_content
+        self.strategy_tool_calls = []
+        self.prompts: list[str] = []
 
-    def prompt_agent(self, **kwargs):
+    def run_prompt(self, **kwargs):
+        prompt = kwargs.get("prompt", "")
+        self.prompts.append(prompt)
         stage_name = kwargs.get("stage_name", "PerceptionStage")
+        if stage_name == "GapAnalysisStage":
+            content = self.gap_content
+            if content is None:
+                content = self.default_gap_content()
+            tool_calls = list(self.gap_tool_calls)
+        elif stage_name == "StrategyStage":
+            content = ""
+            tool_calls = list(self.strategy_tool_calls)
+        else:
+            content = self.perception_content
+            if content is None:
+                content = self.default_perception_content()
+            tool_calls = list(self.tool_calls)
+
         test_logger.conversation_event(
             stage_name=stage_name,
             event="decision_model",
-            payload={"prompt": kwargs.get("prompt")},
+            payload={"prompt": prompt},
             ai_request={"messages": ["agent prompt"]},
-            ai_response={"tool_calls": self.tool_calls},
-            result={"tool_calls": self.tool_calls},
+            ai_response={"content": content, "tool_calls": tool_calls},
+            result={"content": content, "tool_calls": tool_calls},
         )
-        return list(self.tool_calls)
+        return ChatCompletionResult(content=content, tool_calls=tool_calls)
+
+    def parse_output(self, raw_output: str, fallback=None):
+        try:
+            return json.loads(raw_output)
+        except json.JSONDecodeError:
+            return fallback or {}
+
+    def default_gap_content(self) -> str:
+        tool_names = [tool_call.function.name for tool_call in self.gap_tool_calls]
+        return json.dumps({"tool_names": tool_names})
+
+    def default_perception_content(self) -> str:
+        return json.dumps({
+            "player_intent": "unknown",
+            "player_emotion": "neutral",
+            "request_type": "general",
+            "topic": "",
+            "is_ambiguous": False,
+            "threat_signal": "none",
+            "manipulation_signal": "none",
+            "topic_sensitivity": "normal",
+        })
 
 
 class FakeDB:
@@ -70,13 +122,24 @@ class FakeDB:
 
 
 class FakeCharacter:
-    def __init__(self, tool_calls=None):
+    def __init__(
+        self,
+        tool_calls=None,
+        gap_content: str | None = None,
+        gap_tool_calls=None,
+        perception_content: str | None = None,
+    ):
         self.name = "Mira"
         self.situation = "At the market"
         self.sentiment = "neutral"
         self.pl_list = "Helpful trader"
         self.ali_chat = "Welcome, traveler."
-        self.agent = FakeAgent(tool_calls=tool_calls)
+        self.agent = FakeAgent(
+            tool_calls=tool_calls,
+            gap_content=gap_content,
+            gap_tool_calls=gap_tool_calls,
+            perception_content=perception_content,
+        )
         self.db = FakeDB()
         self.talk_ongoing = True
         self.applied_sentiment = None
@@ -90,6 +153,18 @@ class FakeCharacter:
     def get_sentiment_filter(self):
         return {"category": "sentiment"}
 
+    def get_memories(self):
+        return {"category": "memory"}
+
+    def get_past(self):
+        return {"category": "past"}
+
+    def get_faction_knowledge(self):
+        return {"category": "faction_knowledge"}
+
+    def get_world_knowledge(self):
+        return {"category": "world_knowledge"}
+
     def generate_npc_intention(self, intention, reasoning):
         return str(intention) + ": " + reasoning
 
@@ -98,10 +173,6 @@ class FakeCharacter:
 
     def change_sentiment(self, new_sentiment, reasoning):
         self.applied_sentiment = f"{new_sentiment}: {reasoning}"
-
-    def create_answer_prompt(self, prompt: str, sentiment: str, intention: str, context: str):
-        return f"{prompt}|{sentiment}|{intention}|{context}"
-
 
 class TurnPipelineTests(unittest.TestCase):
     @classmethod
@@ -115,27 +186,26 @@ class TurnPipelineTests(unittest.TestCase):
         result = pipeline.run(TurnInput(prompt="Hello there"))
 
         self.assertEqual(result.response.reply, "npc reply")
-        self.assertFalse(result.gap_analysis.needs_retrieval)
-        self.assertEqual(result.perception.normalized_prompt, "Hello there")
+        self.assertEqual(result.gap_analysis.tool_calls, [])
+        self.assertEqual(result.perception.raw_prompt, "Hello there")
         self.assertEqual(result.strategy.conversation_goal, "answer_plainly")
+        self.assertEqual(result.strategy.immediate_actions, ["keep_talking"])
         self.assertFalse(result.terminal_update.store_memory)
 
     def test_pipeline_performs_at_most_one_retrieval_pass(self):
-        tool_calls = [
-            FakeToolCall(FakeFunction("cognitive_action", {
-                "actions": ["remember", "social_interaction"],
-                "reasoning": "Need memory and social context"
-            }))
+        gap_tool_calls = [
+            FakeToolCall(FakeFunction("recall_memory", {"reasoning": "Need memory context"})),
+            FakeToolCall(FakeFunction("evaluate_social_context", {"reasoning": "Need social context"})),
         ]
-        character = FakeCharacter(tool_calls=tool_calls)
+        character = FakeCharacter(
+            gap_content='{"tool_names": ["recall_memory", "evaluate_social_context"]}',
+            gap_tool_calls=gap_tool_calls,
+        )
         pipeline = TurnPipeline(character)
 
-        result = pipeline.run(TurnInput(prompt="Do you remember me?"))
-
-        self.assertTrue(result.gap_analysis.needs_retrieval)
-        self.assertTrue(result.retrieval_plan.requires_retrieval)
-        self.assertEqual(len(result.retrieval_plan.filters), 1)
-        self.assertEqual(character.db.stage_query_calls.get("RetrievalStage.run"), 1)
+        pipeline.run(TurnInput(prompt="Do you remember me?"))
+        self.assertEqual(character.db.stage_query_calls.get("RetrievalStage.run"), 2)
+        self.assertEqual(len(character.agent.prompts), 4)
 
     def test_original_prompt_flows_into_response(self):
         character = FakeCharacter()
@@ -143,8 +213,160 @@ class TurnPipelineTests(unittest.TestCase):
 
         result = pipeline.run(TurnInput(prompt="Tell me about the weather."))
 
-        self.assertEqual(result.perception.normalized_prompt, "Tell me about the weather.")
+        self.assertEqual(result.perception.raw_prompt, "Tell me about the weather.")
         self.assertIn("Tell me about the weather.", result.response.final_prompt)
+        self.assertIn("Tell me about the weather.", result.perception.stage_prompt)
+        self.assertIn("Current sentiment towards player", result.perception.stage_prompt)
+        self.assertIn("Player input", result.response.final_prompt)
+        self.assertIn("Response strategy", result.response.final_prompt)
+
+    def test_every_stage_exposes_prompt_getter(self):
+        character = FakeCharacter()
+        pipeline = TurnPipeline(character)
+
+        self.assertIsInstance(pipeline.initial_context_stage, Stage)
+        self.assertNotIsInstance(pipeline.initial_context_stage, LLMStage)
+        self.assertFalse(hasattr(pipeline.initial_context_stage, "get_prompt"))
+
+        self.assertIsInstance(pipeline.perception_stage, LLMStage)
+        self.assertIsInstance(pipeline.gap_analysis_stage, LLMStage)
+        self.assertIsInstance(pipeline.retrieval_stage, LLMStage)
+        self.assertIsInstance(pipeline.strategy_stage, LLMStage)
+        self.assertIsInstance(pipeline.response_stage, LLMStage)
+        self.assertIsInstance(pipeline.terminal_update_stage, LLMStage)
+
+        self.assertTrue(callable(pipeline.perception_stage.get_prompt))
+        self.assertTrue(callable(pipeline.gap_analysis_stage.get_prompt))
+        self.assertTrue(callable(pipeline.retrieval_stage.get_prompt))
+        self.assertTrue(callable(pipeline.strategy_stage.get_prompt))
+        self.assertTrue(callable(pipeline.response_stage.get_prompt))
+        self.assertTrue(callable(pipeline.terminal_update_stage.get_prompt))
+
+    def test_perception_stage_constructs_its_own_prompt(self):
+        character = FakeCharacter()
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="Do you know this town?"))
+
+        self.assertEqual(len(character.agent.prompts), 3)
+        self.assertEqual(character.agent.prompts[0], result.perception.stage_prompt)
+        self.assertIn("Do you know this town?", result.perception.stage_prompt)
+        self.assertIn("Character definition", result.perception.stage_prompt)
+        self.assertIn("Decision rubric", result.perception.stage_prompt)
+        self.assertIn("Return strictly valid JSON", result.perception.stage_prompt)
+
+    def test_perception_stage_parses_strict_json_into_result(self):
+        character = FakeCharacter(
+            perception_content=json.dumps({
+                "player_intent": "seek_information",
+                "player_emotion": "curious",
+                "request_type": "question",
+                "topic": "local history",
+                "is_ambiguous": False,
+                "threat_signal": "none",
+                "manipulation_signal": "subtle_flattery",
+                "topic_sensitivity": "normal",
+            })
+        )
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="Tell me about this town's history."))
+
+        self.assertEqual(result.perception.player_intent, "seek_information")
+        self.assertEqual(result.perception.player_emotion, "curious")
+        self.assertEqual(result.perception.request_type, "question")
+        self.assertEqual(result.perception.topic, "local history")
+        self.assertFalse(result.perception.is_ambiguous)
+        self.assertEqual(result.perception.threat_signal, "none")
+        self.assertEqual(result.perception.manipulation_signal, "subtle_flattery")
+        self.assertEqual(result.perception.topic_sensitivity, "normal")
+        self.assertEqual(result.perception.tool_calls, [])
+
+    def test_strategy_stage_uses_immediate_action_tools(self):
+        character = FakeCharacter()
+        character.agent.strategy_tool_calls = [
+            FakeToolCall(FakeFunction("open_trade", {"reasoning": "The player is engaging the NPC as a merchant."})),
+            FakeToolCall(FakeFunction("keep_talking", {"reasoning": "The conversation should continue during the trade."})),
+        ]
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="Show me what you have for sale."))
+
+        self.assertEqual(result.strategy.immediate_actions, ["open_trade", "keep_talking"])
+        self.assertEqual(result.terminal_update.external_actions, ["open_trade", "keep_talking"])
+        self.assertIn("The strategy is not limited to dialogue alone. If carrying out the strategy would naturally involve an immediate in-world action, the NPC may use the provided action tools.", character.agent.prompts[2])
+
+    def test_strategy_stage_can_end_conversation_via_tool(self):
+        character = FakeCharacter()
+        character.agent.strategy_tool_calls = [
+            FakeToolCall(FakeFunction("alert_guards", {"reasoning": "The player is making a dangerous threat."})),
+            FakeToolCall(FakeFunction("end_conversation", {"reasoning": "The NPC refuses further engagement."})),
+        ]
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="Tell me or I'll burn this place down."))
+
+        self.assertEqual(result.strategy.immediate_actions, ["alert_guards", "end_conversation"])
+        self.assertEqual(result.terminal_update.external_actions, ["alert_guards", "end_conversation"])
+
+    def test_gap_analysis_stage_requests_strict_json(self):
+        character = FakeCharacter(
+            gap_content='{"tool_names": ["recall_memory"]}'
+        )
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="What did I tell you yesterday?"))
+
+        self.assertEqual(result.gap_analysis.tool_calls, [])
+        self.assertIn("If more context is needed, call the relevant retrieval tools directly.", character.agent.prompts[1])
+        self.assertIn("The tool calls are the decision payload", character.agent.prompts[1])
+
+    def test_gap_analysis_tool_calls_drive_retrieval_collection(self):
+        gap_tool_calls = [
+            FakeToolCall(FakeFunction("recall_memory", {"reasoning": "Need memory context before answering"}))
+        ]
+        character = FakeCharacter(
+            gap_content='{"tool_names": []}',
+            gap_tool_calls=gap_tool_calls,
+        )
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="What happened last time?"))
+
+        self.assertEqual(result.gap_analysis.tool_calls, gap_tool_calls)
+        self.assertEqual(character.db.stage_query_calls.get("RetrievalStage.run"), 1)
+        self.assertEqual(result.retrieved_context.memory_context, "retrieved lore")
+        self.assertEqual(result.retrieved_context.relationship_context, "no information")
+        self.assertEqual(result.retrieved_context.knowledge_context, "no information")
+        self.assertEqual(result.retrieved_context.social_context, "no information")
+
+    def test_retrieval_loops_back_to_perception_once_when_gap_tools_exist(self):
+        gap_tool_calls = [
+            FakeToolCall(FakeFunction("recall_memory", {"reasoning": "Need memory context before answering"}))
+        ]
+        character = FakeCharacter(
+            gap_content='{"tool_names": ["recall_memory"]}',
+            gap_tool_calls=gap_tool_calls,
+        )
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="What happened here before?"))
+
+        self.assertEqual(len(character.agent.prompts), 4)
+        self.assertIn("Additional retrieved context", result.perception.stage_prompt)
+        self.assertIn("retrieved lore", result.perception.stage_prompt)
+
+    def test_retrieval_defaults_unrequested_context_to_no_information(self):
+        character = FakeCharacter()
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="Hello there"))
+
+        self.assertEqual(result.retrieved_context.combined_context, "no information")
+        self.assertEqual(result.retrieved_context.memory_context, "no information")
+        self.assertEqual(result.retrieved_context.relationship_context, "no information")
+        self.assertEqual(result.retrieved_context.knowledge_context, "no information")
+        self.assertEqual(result.retrieved_context.social_context, "no information")
 
     def test_pipeline_emits_verbose_logs_in_stage_order(self):
         character = FakeCharacter()
@@ -161,8 +383,6 @@ class TurnPipelineTests(unittest.TestCase):
             "PerceptionStage completed successfully",
             "GapAnalysisStage started",
             "GapAnalysisStage completed successfully",
-            "RetrievalStage.create_plan started",
-            "RetrievalStage.create_plan completed successfully",
             "RetrievalStage.run started",
             "RetrievalStage.run completed successfully",
             "StrategyStage started",

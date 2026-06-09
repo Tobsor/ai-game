@@ -110,38 +110,6 @@ class Character:
             logger.verbose("Response sent to client for %s", self.name)
             await socket.send_json({ "event": "message", "data": answer })
 
-    def create_answer_prompt(self, prompt: str, sentiment: str, intention: str, context: str):
-        return f"""
-            Enter RP mode. You are {self.name}. Stay in character at all times, speaking in first person as {self.name}:
-
-            Situation:
-            {self.situation}
-
-            General context:
-            {context}
-
-            Sentiment towards player:
-            {sentiment}
-
-            Follow this character definition:
-            {self.pl_list}
-
-            Example dialogues:
-            {self.ali_chat}
-
-            The character follows the following intention when responding to the character:
-            {intention}
-
-            Mention non verbal content from the first person perspective and not by speaking of the npc in third person, e.g.:
-            *scratches his nose* So what do you want?
-
-            Only generate dialog relevant text, which is perceivable from the users perspective. Don't mention the npc thoughts.
-
-            You shall reply to the user while staying in character.
-            <|user|>{prompt}
-            <|model|>{{model's response goes here}}
-        """
-
     def compute_sentiment(self):
         sentiment = self.get_sentiment()
         if sentiment.strip() == "":

@@ -2,7 +2,7 @@ from typing import Dict, Any, Callable
 import re
 import json
 
-from ai import AISettings, create_chat_provider, get_ai_settings
+from ai import AISettings, ChatCompletionResult, create_chat_provider, get_ai_settings
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -12,101 +12,29 @@ class NPCAgent:
         settings = settings or get_ai_settings()
         self.provider = create_chat_provider(settings.decision_llm)
 
-    def parse_output(self, raw_output: str) -> Dict[str, Any]:
+    def parse_output(self, raw_output: str, fallback: Dict[str, Any] | None = None) -> Dict[str, Any]:
         """
         Attempt to parse JSON from the model output.
-        Falls back to safe defaults on error.
+        Falls back to the provided defaults on error.
         """
-        # Sometimes models wrap JSON in markdown fences; strip them
         cleaned = raw_output.strip()
         cleaned = re.sub(r"^```(?:json)?", "", cleaned)
         cleaned = re.sub(r"```$", "", cleaned).strip()
 
         try:
             data = json.loads(cleaned)
-            return data
+            return data if isinstance(data, dict) else (fallback or {})
         except json.JSONDecodeError:
-            # Fallback: safe defaults with explanation
-            return {
-                "character_consistency": 1,
-                "voice_consistency": 1,
-                "sentiment_match": 1,
-                "lore_consistency": 1,
-                "context_usage": 1,
-                "breaks_character": False,
-                "explanation": f"Failed to parse JSON from judge output: {cleaned[:200]}",
-            }
+            return fallback or {}
 
-    def create_agent_prompt(self, name: str, situation: str, pl_list: str, sentiment: str, prompt: str):
-        # TODO: Redesign the thinking level from a meta level:
-        # Perception: Player intent (Determine what the player is trying to achieve), Emotional signal (How does the player seem to feel?), Social context (What social situation am I in?)
-        # Memory: Past memory (Search for related past events.), Relationship history (What has happened between me and this player?), personal knowledge (What do I know about this topic?)
-        return f"""
-            You are the internal decision-making agent for the NPC {name}.
-            You DO NOT generate dialogue. You DO NOT roleplay. 
-            You only decide which internal cognitive actions the NPC should perform before answering the player.
-
-            Situation:
-            {situation}
-
-            Current sentiment towards player:
-            {sentiment}
-
-            Follow this character definition:
-            {pl_list}
-
-            Decide on the following 4 levels what the NPC does:
-            1. Which cognitive actions the NPC should take next:
-            - remember (recall past events or memories relevant to the question)
-            - research (consult world, faction, or general knowledge)
-            - social_interaction (consider relationship, tone, social goals)
-            - introspect (reflect on internal motives, fears, desires)
-            - plan_task (reference quests, objectives, promises)
-
-            2. What intention the character follows in the conversation with the user.
-            - answer_plainly (the NPC plainly responds to the prompt)
-            - clarify (ask for more info instead of hallucinating)
-            - ignore (if the character chooses not to answer directly)
-            - deceive (attempt to swindle the user / lie)
-            - bargain (tries to make a deal with the user)
-            - help (ask the user for help)
-            - threaten (threaten the user)
-            - bluff (attempt to impress the user)
-            - trust (attempt to gain the trust of the user)
-            - scheme (engange in a conversation to pursue a hidden agenda)
-            - insult (insult the user or someone else)
-            The explanation should provide a reasoning on why you decided on the given sentiment and cognitive actions. Create a short explanation for the intention.
-
-            3. What immediate action the character takes
-            - keep_talking (The character is still interested in the conversation)
-            - end_conversation (The character ends the conversation with the user)
-
-            4. Decide if the sentiment towards the player changes after the conversation: neutral, happy, shocked, grateful, confused, stimulated, insulted, skeptical, disappointed, angry, interested, disinterested, agitated, nervous
-            Provide a short explanation how the character now feels after that user interaction
-
-            Evaluate the instruction towards that user prompt:
-            {prompt}
-        """
-
-    def prompt_agent(
+    def run_prompt(
         self,
-        name: str,
-        pl_list: str,
-        situation: str,
         prompt: str,
-        sentiment: str,
         tools: list[Callable] | None,
         stage_name: str = "PerceptionStage",
-    ):
-        agent_prompt = self.create_agent_prompt(
-            name=name,
-            situation=situation,
-            pl_list=pl_list,
-            sentiment=sentiment,
-            prompt=prompt
-        )
-
-        system_message = {"role": "user", "content": agent_prompt}
+        payload: dict[str, Any] | None = None,
+    ) -> ChatCompletionResult:
+        system_message = {"role": "user", "content": prompt}
 
         res = self.provider.chat(
             messages=[system_message],
@@ -117,12 +45,7 @@ class NPCAgent:
         logger.conversation_event(
             stage_name=stage_name,
             event="decision_model",
-            payload={
-                "name": name,
-                "situation": situation,
-                "sentiment": sentiment,
-                "prompt": prompt,
-            },
+            payload=payload or {"prompt": prompt},
             ai_request={
                 "messages": [system_message],
                 "tools": [tool.__name__ for tool in tools] if tools is not None else [],
@@ -131,7 +54,7 @@ class NPCAgent:
                 "content": res.content,
                 "tool_calls": res.tool_calls,
             },
-            result={"tool_calls": res.tool_calls},
+            result={"content": res.content, "tool_calls": res.tool_calls},
         )
 
-        return res.tool_calls
+        return res

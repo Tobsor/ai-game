@@ -23,7 +23,7 @@ class InitialContext:
 @dataclass
 class PerceptionResult:
     raw_prompt: str
-    normalized_prompt: str
+    stage_prompt: str = ""
     player_intent: str = "unknown"
     player_emotion: str = "neutral"
     request_type: str = "general"
@@ -38,23 +38,7 @@ class PerceptionResult:
 
 @dataclass
 class GapAnalysisResult:
-    needs_retrieval: bool
-    needs_memory: bool = False
-    needs_relationship_context: bool = False
-    needs_knowledge: bool = False
-    needs_social_context: bool = False
-    needs_threat_analysis: bool = False
-    needs_manipulation_analysis: bool = False
-    needs_sensitivity_analysis: bool = False
-    retrieval_actions: list[str] = field(default_factory=list)
-
-
-@dataclass
-class RetrievalPlan:
-    requires_retrieval: bool
-    prompt: str
-    filters: list[dict[str, Any]] = field(default_factory=list)
-    retrieval_actions: list[str] = field(default_factory=list)
+    tool_calls: list[Any] = field(default_factory=list)
 
 
 @dataclass
@@ -64,15 +48,6 @@ class RetrievedContext:
     relationship_context: str = ""
     knowledge_context: str = ""
     social_context: str = ""
-    threat_analysis: str = ""
-    manipulation_analysis: str = ""
-    sensitivity_analysis: str = ""
-    trust_respect_impact: str = ""
-    fear_suspicion: str = ""
-    internal_conflict: str = ""
-    belief_updates: list[str] = field(default_factory=list)
-    goal_updates: list[str] = field(default_factory=list)
-    next_action_plan: str = ""
 
 
 @dataclass
@@ -85,7 +60,7 @@ class StrategyResult:
     tone: str = "in_character"
     verbosity: str = "normal"
     conversation_move: str = "answer"
-    immediate_action: str = "keep_talking"
+    immediate_actions: list[str] = field(default_factory=list)
     new_sentiment: str | None = None
     sentiment_reasoning: str = ""
 
@@ -107,7 +82,7 @@ class StateUpdate:
 class TerminalUpdateResult:
     sentiment: str | None = None
     sentiment_reasoning: str = ""
-    immediate_action: str = "keep_talking"
+    immediate_actions: list[str] = field(default_factory=list)
     relationship_update: StateUpdate = field(default_factory=StateUpdate)
     belief_update: StateUpdate = field(default_factory=StateUpdate)
     goal_update: StateUpdate = field(default_factory=StateUpdate)
@@ -120,7 +95,6 @@ class TurnResult:
     initial_context: InitialContext
     perception: PerceptionResult
     gap_analysis: GapAnalysisResult
-    retrieval_plan: RetrievalPlan
     retrieved_context: RetrievedContext
     strategy: StrategyResult
     response: ResponseResult
