@@ -30,8 +30,8 @@ class NPCAgent:
     def run_prompt(
         self,
         prompt: str,
-        tools: list[Callable] | None,
         stage_name: str = "PerceptionStage",
+        tools: list[Callable] | None = None,
         payload: dict[str, Any] | None = None,
     ) -> ChatCompletionResult:
         system_message = {"role": "user", "content": prompt}

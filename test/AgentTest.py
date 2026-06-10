@@ -86,31 +86,31 @@ class AgentTest:
         )
     
     def evaluate_immediate_action(self, prompt: AgentTestPrompt) -> AgentJudgeResult:
-        immediate_action_tool = self.find_tool("immediate_action", prompt=prompt)
+        immediate_action_tool = self.find_tool("immediate_actions", prompt=prompt)
 
         if immediate_action_tool == None:
             return AgentJudgeResult(
-                tool="immediate_action",
+                tool="immediate_actions",
                 args=None,
-                expected_invoked=prompt.expected_args.immediate_action.is_invoked,
-                expected_args=prompt.expected_args.immediate_action.args,
+                expected_invoked=prompt.expected_args.immediate_actions.is_invoked,
+                expected_args=prompt.expected_args.immediate_actions.args,
                 user_prompt=prompt.user_query,
                 raw_response=prompt.npc_response,
-                invoked_pass=prompt.expected_args.immediate_action.is_invoked == False,
-                args_pass= 1 if prompt.expected_args.immediate_action.is_invoked == False else 0
+                invoked_pass=prompt.expected_args.immediate_actions.is_invoked == False,
+                args_pass= 1 if prompt.expected_args.immediate_actions.is_invoked == False else 0
             )
         
-        action_matches = immediate_action_tool.function.arguments.get("action") == prompt.expected_args.immediate_action.args
+        action_matches = immediate_action_tool.function.arguments.get("action") == prompt.expected_args.immediate_actions.args
 
         return AgentJudgeResult(
-            tool="immediate_action",
+            tool="immediate_actions",
             args=immediate_action_tool.function.arguments,
-            expected_invoked=prompt.expected_args.immediate_action.is_invoked,
-            expected_args=prompt.expected_args.immediate_action.args,
+            expected_invoked=prompt.expected_args.immediate_actions.is_invoked,
+            expected_args=prompt.expected_args.immediate_actions.args,
             user_prompt=prompt.user_query,
             raw_response=prompt.npc_response,
-            invoked_pass=prompt.expected_args.immediate_action.is_invoked == True,
-            args_pass=action_matches if prompt.expected_args.immediate_action.is_invoked == True else True
+            invoked_pass=prompt.expected_args.immediate_actions.is_invoked == True,
+            args_pass=action_matches if prompt.expected_args.immediate_actions.is_invoked == True else True
         )
     
     def evaluate_change_sentiment(self, prompt: AgentTestPrompt) -> AgentJudgeResult:

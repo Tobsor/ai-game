@@ -291,7 +291,7 @@ class Character:
         
         return str(intention) + ": " + reasoning
     
-    def immediate_action(self, action: NPCAction):
+    def immediate_actions(self, action: NPCAction):
         """
         Tool function: When the character takes an immediate action as a consequence of the user prompt
 
@@ -346,7 +346,7 @@ class Character:
                 reasoning=terminal_update.sentiment_reasoning
             )
 
-        self.immediate_action(terminal_update.immediate_action)
+        self.immediate_actions(terminal_update.immediate_actions)
         self.update_relationship(terminal_update.relationship_update)
         self.update_beliefs(terminal_update.belief_update)
         self.update_goals(terminal_update.goal_update)

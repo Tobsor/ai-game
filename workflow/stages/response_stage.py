@@ -27,13 +27,6 @@ class ResponseStage(LLMStage):
                 ("Active goals", ", ".join(initial_context.active_goals)),
                 ("Recent turns", " | ".join(initial_context.recent_turns)),
                 ("Beliefs", ", ".join(initial_context.belief_state)),
-                ("Threat analysis", retrieved_context.threat_analysis),
-                ("Manipulation analysis", retrieved_context.manipulation_analysis),
-                ("Sensitivity analysis", retrieved_context.sensitivity_analysis),
-                ("Trust and respect impact", retrieved_context.trust_respect_impact),
-                ("Fear or suspicion", retrieved_context.fear_suspicion),
-                ("Internal conflict", retrieved_context.internal_conflict),
-                ("Planned next action", retrieved_context.next_action_plan),
                 (
                     "Response strategy",
                     "\n".join([

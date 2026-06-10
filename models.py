@@ -95,7 +95,7 @@ class ExpectedToolArgs(BaseModel):
     cognitive_action: ExpectedResult
     generate_npc_intention: ExpectedResult
     change_sentiment: ExpectedResult
-    immediate_action: ExpectedResult
+    immediate_actions: ExpectedResult
 
 class AgentTestPrompt(BaseModel):
     user_query: str

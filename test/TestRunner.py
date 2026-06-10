@@ -44,7 +44,7 @@ def test_agent(character: Character):
         npc_judge.evaluate_prompts(prompts=all_prompts, character=character, tools=[
                     Character.cognitive_action,
                     Character.generate_npc_intention,
-                    Character.immediate_action,
+                    Character.immediate_actions,
                     Character.change_sentiment
                 ])
 

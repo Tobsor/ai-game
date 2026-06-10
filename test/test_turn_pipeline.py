@@ -168,7 +168,7 @@ class FakeCharacter:
     def generate_npc_intention(self, intention, reasoning):
         return str(intention) + ": " + reasoning
 
-    def immediate_action(self, action):
+    def immediate_actions(self, action):
         self.talk_ongoing = action != "end_conversation"
 
     def change_sentiment(self, new_sentiment, reasoning):
