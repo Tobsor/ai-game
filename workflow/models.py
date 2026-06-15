@@ -68,7 +68,7 @@ class StrategyResult:
 @dataclass
 class ResponseResult:
     reply: str
-    final_prompt: str
+    turn_prompt: str
 
 
 @dataclass

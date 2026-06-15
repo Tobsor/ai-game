@@ -47,7 +47,8 @@ class RetrievalStage(LLMStage):
             ]
             if text != "no information"
         ]
-        combined_context = "\n".join(combined_parts) if len(combined_parts) > 0 else "no information"
+        raw_combined_context = "\n".join(combined_parts) if len(combined_parts) > 0 else "no information"
+        combined_context = self.summarize_retrieved_context(perception, raw_combined_context)
 
         return RetrievedContext(
             combined_context=combined_context,
@@ -98,6 +99,21 @@ class RetrievalStage(LLMStage):
             stage_name="RetrievalStage.run",
         ).strip() or "no information"
 
+    def summarize_retrieved_context(self, perception: PerceptionResult, raw_context: str) -> str:
+        if raw_context == "no information":
+            return raw_context
+
+        response = self.character.agent.run_prompt(
+            prompt=self.build_summary_prompt(perception, raw_context),
+            stage_name="RetrievalStage.summarize",
+            payload={
+                "player_prompt": perception.raw_prompt,
+                "retrieved_context": raw_context,
+            },
+        )
+        summary = response.content.strip()
+        return summary or "no information"
+
     def build_tool_prompt(self, instruction: str, perception: PerceptionResult, tool_arguments: dict) -> str:
         reasoning = str(tool_arguments.get("reasoning", "")).strip()
         return "\n".join([
@@ -107,4 +123,19 @@ class RetrievalStage(LLMStage):
             f"Perceived topic: {perception.topic}",
             f"Retrieval reason: {reasoning if reasoning != '' else 'not provided'}",
             "Return only the retrieved context as plain text.",
+        ])
+
+    def build_summary_prompt(self, perception: PerceptionResult, raw_context: str) -> str:
+        return "\n".join([
+            "Summarize the retrieved context for downstream response generation.",
+            "Refer every included context snippet directly to the player's prompt input.",
+            "Include only evidently relevant context snippets.",
+            "Do not invent facts, explanations, or links that are not explicitly supported by the retrieved context.",
+            "If nothing in the retrieved context is evidently relevant, return exactly: no information",
+            f"Player input: {perception.raw_prompt}",
+            f"Perceived intent: {perception.player_intent}",
+            f"Perceived topic: {perception.topic}",
+            "Retrieved context:",
+            raw_context,
+            "Return only the concise summarized context as plain text.",
         ])

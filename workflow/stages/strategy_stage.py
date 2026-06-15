@@ -27,12 +27,29 @@ class StrategyStage(LLMStage):
                         "Decide what interaction strategy this NPC chooses toward the player in this moment.",
                         "Focus on what the NPC wants to achieve, how the NPC wants to treat or position toward the player, what tone or social approach fits, and what would feel natural for this specific character in this situation.",
                         "Consider whether the NPC wants to cooperate, deflect, pressure, help, refuse, test, threaten, bargain, open up, or guide the conversation in another direction.",
+                        "Keep the NPC's intention and strategy portrayal short and concise. Prefer brief labels or compact phrases over elaborate explanations.",
                         "The strategy is not limited to dialogue alone. If carrying out the strategy would naturally involve an immediate in-world action, the NPC may use the provided action tools.",
                         "Use those tools only when the action is plausible for the character and meaningfully supports the chosen strategy.",
+                        "The tools are only for immediate_actions. They are not the general strategy output and should not replace the textual evaluation of the NPC's strategy.",
                         "If no special in-world action is needed, simply continue the interaction.",
                     ]),
                 ),
-                ("Expected result", "A strategy covering conversation goal, risk, disclosure, social approach, tone, verbosity, conversation move, and any immediate actions."),
+                (
+                    "Expected JSON output",
+                    "\n".join([
+                        "{",
+                        '  "intention": "short prose description",',
+                        '  "conversation_goal": "short prose description",',
+                        '  "risk_level": "short prose description",',
+                        '  "disclosure_level": "short prose description",',
+                        '  "social_strategy": "short prose description",',
+                        '  "tone": "short prose description",',
+                        '  "verbosity": "short prose description",',
+                        '  "conversation_move": "short prose description"',
+                        "}",
+                    ]),
+                ),
+                ("Expected result", "Return valid JSON matching the shown structure. Keep the textual fields concise, and use tools only to express immediate_actions."),
             ],
         )
 
@@ -118,7 +135,7 @@ class StrategyStage(LLMStage):
         retrieved_context: RetrievedContext,
     ) -> str:
         # TODO: Infer the NPC's conversational intention from strategy reasoning.
-        return "answer_plainly"
+        return "answer_briefly"
 
     def select_conversation_goal(
         self,
@@ -172,7 +189,7 @@ class StrategyStage(LLMStage):
         retrieved_context: RetrievedContext,
     ) -> str:
         # TODO: Choose how concise or expansive the reply should be.
-        return "normal"
+        return "concise"
 
     def select_conversation_move(
         self,

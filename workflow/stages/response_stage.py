@@ -7,26 +7,17 @@ logger = get_logger(__name__)
 
 
 class ResponseStage(LLMStage):
-    def get_prompt(
+    def get_turn_prompt(
         self,
-        initial_context: InitialContext,
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
         strategy: StrategyResult,
     ) -> str:
         return format_prompt(
-            f"Enter RP mode. You are {initial_context.character_name}. Stay in character at all times, speak in first person, and produce only perceivable dialogue or first-person nonverbal actions.",
+            "Respond to the current turn using the latest player input, retrieved context, and response strategy.",
             [
-                ("Situation", initial_context.situation),
-                ("Sentiment towards player", initial_context.sentiment),
-                ("Character definition", initial_context.character_definition),
-                ("Example dialogues", initial_context.example_dialogues),
                 ("Player input", perception.raw_prompt),
                 ("Retrieved context", retrieved_context.combined_context),
-                ("Relationship summary", initial_context.relationship_summary),
-                ("Active goals", ", ".join(initial_context.active_goals)),
-                ("Recent turns", " | ".join(initial_context.recent_turns)),
-                ("Beliefs", ", ".join(initial_context.belief_state)),
                 (
                     "Response strategy",
                     "\n".join([
@@ -46,12 +37,20 @@ class ResponseStage(LLMStage):
                         "Mention nonverbal content only from the first-person perspective.",
                         "Do not reveal internal thoughts directly.",
                         "Reply to the player while staying fully in character.",
-                        f"<|user|>{perception.raw_prompt}",
-                        "<|model|>{model's response goes here}",
+                        f"Respond to the following user input: {perception.raw_prompt}",
                     ]),
                 ),
             ],
         )
+
+    def get_prompt(
+        self,
+        initial_context: InitialContext,
+        perception: PerceptionResult,
+        retrieved_context: RetrievedContext,
+        strategy: StrategyResult,
+    ) -> str:
+        return self.get_turn_prompt(perception, retrieved_context, strategy)
 
     def run(
         self,
@@ -60,10 +59,14 @@ class ResponseStage(LLMStage):
         retrieved_context: RetrievedContext,
         strategy: StrategyResult,
     ) -> ResponseResult:
-        final_prompt = self.get_prompt(initial_context, perception, retrieved_context, strategy)
+        turn_prompt = self.get_turn_prompt(perception, retrieved_context, strategy)
 
-        logger.verbose("Response stage assembled final prompt")
-        logger.debug("Final prompt: %s", final_prompt)
-        response = self.character.db.generate_text(final_prompt, stage_name="ResponseStage")
+        logger.verbose("Response stage assembled turn prompt")
+        logger.debug("Turn prompt: %s", turn_prompt)
 
-        return ResponseResult(reply=response, final_prompt=final_prompt)
+        response = self.character.db.generate_text(turn_prompt, stage_name="ResponseStage")
+
+        return ResponseResult(
+            reply=response,
+            turn_prompt=turn_prompt,
+        )

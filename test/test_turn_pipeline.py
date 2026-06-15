@@ -8,6 +8,7 @@ from unittest.mock import patch
 from ai import ChatCompletionResult
 from logger import configure_logging, get_logger
 from workflow.models import TurnInput
+from workflow import pipeline as workflow_pipeline
 from workflow.pipeline import TurnPipeline
 from workflow.stages import LLMStage, Stage
 
@@ -32,11 +33,13 @@ class FakeAgent:
         gap_content: str | None = None,
         gap_tool_calls=None,
         perception_content: str | None = None,
+        retrieval_summary_content: str | None = None,
     ):
         self.tool_calls = tool_calls or []
         self.gap_content = gap_content
         self.gap_tool_calls = gap_tool_calls or []
         self.perception_content = perception_content
+        self.retrieval_summary_content = retrieval_summary_content or "summarized retrieved lore"
         self.strategy_tool_calls = []
         self.prompts: list[str] = []
 
@@ -49,6 +52,9 @@ class FakeAgent:
             if content is None:
                 content = self.default_gap_content()
             tool_calls = list(self.gap_tool_calls)
+        elif stage_name == "RetrievalStage.summarize":
+            content = self.retrieval_summary_content
+            tool_calls = []
         elif stage_name == "StrategyStage":
             content = ""
             tool_calls = list(self.strategy_tool_calls)
@@ -96,6 +102,21 @@ class FakeDB:
         self.query_calls = 0
         self.stage_query_calls: dict[str, int] = {}
         self.prompts: list[str] = []
+        self.messages: list[dict[str, str]] = []
+        self.response_context_initialized = False
+
+    def seed_response_context(self, system_prompt: str, seed_context_prompt: str):
+        if self.response_context_initialized:
+            return
+
+        seed_messages = []
+        if system_prompt.strip() != "":
+            seed_messages.append({"role": "system", "content": system_prompt})
+        if seed_context_prompt.strip() != "":
+            seed_messages.append({"role": "user", "content": seed_context_prompt})
+
+        self.messages = seed_messages + self.messages
+        self.response_context_initialized = True
 
     def query_text(self, prompt: str, filter=None, stage_name: str = "RetrievalStage"):
         self.query_calls += 1
@@ -109,12 +130,17 @@ class FakeDB:
         return "retrieved lore"
 
     def generate_text(self, prompt: str, stage_name: str = "ResponseStage") -> str:
+        request_messages = list(self.messages)
+        request_messages.append({"role": "user", "content": prompt})
+
         self.prompts.append(prompt)
+        self.messages = list(request_messages)
+        self.messages.append({"role": "assistant", "content": "npc reply"})
         test_logger.conversation_event(
             stage_name=stage_name,
             event="generate_text",
             payload={"prompt": prompt},
-            ai_request={"messages": [{"role": "user", "content": prompt}]},
+            ai_request={"messages": request_messages},
             ai_response={"content": "npc reply", "tool_calls": []},
             result={"reply": "npc reply"},
         )
@@ -128,6 +154,7 @@ class FakeCharacter:
         gap_content: str | None = None,
         gap_tool_calls=None,
         perception_content: str | None = None,
+        retrieval_summary_content: str | None = None,
     ):
         self.name = "Mira"
         self.situation = "At the market"
@@ -139,6 +166,7 @@ class FakeCharacter:
             gap_content=gap_content,
             gap_tool_calls=gap_tool_calls,
             perception_content=perception_content,
+            retrieval_summary_content=retrieval_summary_content,
         )
         self.db = FakeDB()
         self.talk_ongoing = True
@@ -205,7 +233,7 @@ class TurnPipelineTests(unittest.TestCase):
 
         pipeline.run(TurnInput(prompt="Do you remember me?"))
         self.assertEqual(character.db.stage_query_calls.get("RetrievalStage.run"), 2)
-        self.assertEqual(len(character.agent.prompts), 4)
+        self.assertEqual(len(character.agent.prompts), 5)
 
     def test_original_prompt_flows_into_response(self):
         character = FakeCharacter()
@@ -214,11 +242,12 @@ class TurnPipelineTests(unittest.TestCase):
         result = pipeline.run(TurnInput(prompt="Tell me about the weather."))
 
         self.assertEqual(result.perception.raw_prompt, "Tell me about the weather.")
-        self.assertIn("Tell me about the weather.", result.response.final_prompt)
+        self.assertIn("Tell me about the weather.", result.response.turn_prompt)
         self.assertIn("Tell me about the weather.", result.perception.stage_prompt)
         self.assertIn("Current sentiment towards player", result.perception.stage_prompt)
-        self.assertIn("Player input", result.response.final_prompt)
-        self.assertIn("Response strategy", result.response.final_prompt)
+        self.assertIn("Player input", result.response.turn_prompt)
+        self.assertIn("Response strategy", result.response.turn_prompt)
+        self.assertEqual(character.db.prompts[-1], result.response.turn_prompt)
 
     def test_every_stage_exposes_prompt_getter(self):
         character = FakeCharacter()
@@ -336,6 +365,7 @@ class TurnPipelineTests(unittest.TestCase):
         self.assertEqual(result.gap_analysis.tool_calls, gap_tool_calls)
         self.assertEqual(character.db.stage_query_calls.get("RetrievalStage.run"), 1)
         self.assertEqual(result.retrieved_context.memory_context, "retrieved lore")
+        self.assertEqual(result.retrieved_context.combined_context, "summarized retrieved lore")
         self.assertEqual(result.retrieved_context.relationship_context, "no information")
         self.assertEqual(result.retrieved_context.knowledge_context, "no information")
         self.assertEqual(result.retrieved_context.social_context, "no information")
@@ -352,9 +382,26 @@ class TurnPipelineTests(unittest.TestCase):
 
         result = pipeline.run(TurnInput(prompt="What happened here before?"))
 
-        self.assertEqual(len(character.agent.prompts), 4)
+        self.assertEqual(len(character.agent.prompts), 5)
         self.assertIn("Additional retrieved context", result.perception.stage_prompt)
-        self.assertIn("retrieved lore", result.perception.stage_prompt)
+        self.assertIn("summarized retrieved lore", result.perception.stage_prompt)
+
+    def test_retrieval_summary_prompt_filters_for_evidently_relevant_context(self):
+        gap_tool_calls = [
+            FakeToolCall(FakeFunction("recall_knowledge", {"reasoning": "Need knowledge context before answering"}))
+        ]
+        character = FakeCharacter(
+            gap_content='{"tool_names": ["recall_knowledge"]}',
+            gap_tool_calls=gap_tool_calls,
+        )
+        pipeline = TurnPipeline(character)
+
+        pipeline.run(TurnInput(prompt="What do you know about the old temple?"))
+
+        summary_prompt = character.agent.prompts[2]
+        self.assertIn("Include only evidently relevant context snippets.", summary_prompt)
+        self.assertIn("Refer every included context snippet directly to the player's prompt input.", summary_prompt)
+        self.assertIn("Player input: What do you know about the old temple?", summary_prompt)
 
     def test_retrieval_defaults_unrequested_context_to_no_information(self):
         character = FakeCharacter()
@@ -427,6 +474,8 @@ class TurnPipelineTests(unittest.TestCase):
             self.assertIn("=== Stage: RetrievalStage.run ===", content)
             self.assertIn("=== Stage: ResponseStage ===", content)
             self.assertIn("=== Stage: TerminalUpdateStage ===", content)
+            self.assertIn("=== Stage: TurnPipeline ===", content)
+            self.assertIn("event: final_response_output", content)
             self.assertIn("ai_request:", content)
             self.assertIn("ai_response:", content)
             self.assertIn("Hello there", content)
@@ -434,27 +483,53 @@ class TurnPipelineTests(unittest.TestCase):
 
     def test_pipeline_failure_logs_stage_and_persists_error_marker(self):
         recorded_events = []
-        character = FakeCharacter()
-        pipeline = TurnPipeline(character)
+        with TemporaryDirectory() as temp_dir:
+            token = test_logger.start_conversation_trace(
+                root_dir=Path(temp_dir),
+                character_name="Mira",
+                profile="test-profile",
+                providers={"response": "fake:model"},
+                persist_enabled=True,
+            )
+            conversation_id = test_logger.get_conversation_id()
+            try:
+                character = FakeCharacter()
+                pipeline = TurnPipeline(character)
 
-        def raise_failure(*args, **kwargs):
-            raise RuntimeError("stage boom")
+                def raise_failure(*args, **kwargs):
+                    raise RuntimeError("stage boom")
 
-        pipeline.perception_stage.run = raise_failure
+                pipeline.perception_stage.run = raise_failure
 
-        def capture_event(**kwargs):
-            recorded_events.append(kwargs)
+                original_conversation_event = workflow_pipeline.logger.conversation_event
 
-        with patch("workflow.pipeline.logger.conversation_event", side_effect=capture_event):
-            with self.assertLogs("workflow.pipeline", level="ERROR") as captured:
-                with self.assertRaises(RuntimeError):
-                    pipeline.run(TurnInput(prompt="Hello there"))
+                def capture_event(**kwargs):
+                    recorded_events.append(kwargs)
+                    original_conversation_event(**kwargs)
 
-        self.assertIn("PerceptionStage failed: stage boom", "\n".join(captured.output))
-        self.assertTrue(any(
-            event.get("stage_name") == "PerceptionStage" and event.get("event") == "stage_failed"
-            for event in recorded_events
-        ))
+                with patch("workflow.pipeline.logger.conversation_event", side_effect=capture_event):
+                    with self.assertLogs("workflow.pipeline", level="ERROR") as captured:
+                        with self.assertRaises(RuntimeError):
+                            pipeline.run(TurnInput(prompt="Hello there"))
+            finally:
+                test_logger.reset_conversation_id(token)
+
+            self.assertIn("PerceptionStage failed: stage boom", "\n".join(captured.output))
+            self.assertTrue(any(
+                event.get("stage_name") == "PerceptionStage"
+                and event.get("event") == "stage_failed"
+                and event.get("payload") == {"prompt": "Hello there"}
+                for event in recorded_events
+            ))
+            trace_path = test_logger.get_conversation_trace_path(conversation_id)
+            self.assertIsNotNone(trace_path)
+            assert trace_path is not None
+            self.assertTrue(trace_path.exists())
+            content = trace_path.read_text(encoding="utf-8")
+            self.assertIn("conversation_id:", content)
+            self.assertIn("event: stage_failed", content)
+            self.assertIn('"prompt": "Hello there"', content)
+            self.assertIn('"error": "stage boom"', content)
 
 
 if __name__ == "__main__":

@@ -7,8 +7,21 @@ from fastapi import WebSocket
 from server_models import ChatRequest
 import json
 from workflow import TurnInput, TurnPipeline
+from workflow.models import InitialContext
 
 from logger import get_logger
+
+
+def format_prompt(title: str, sections: list[tuple[str, str]]) -> str:
+    parts = [title.strip()]
+
+    for heading, content in sections:
+        text = content.strip()
+        if text == "":
+            continue
+        parts.append(f"{heading}:\n{text}")
+
+    return "\n\n".join(parts)
 
 annotation_mapping = {
     "job": "Job",
@@ -59,24 +72,9 @@ class Character:
 
     async def initiate_conversation(self, socket: WebSocket):
         logger.info("Initiating conversation with %s", self.name)
-        greeting_prompt = f"""
-            Enter RP mode. You are {self.name}. Stay in character at all times, speaking in first person as {self.name}:
+        self.initialize_message_loop_context()
 
-            Situation:
-            {self.situation}
-
-            Sentiment towards player:
-            {self.sentiment}
-
-            Follow this character definition:
-            {self.pl_list}
-
-            Example dialogues:
-            {self.ali_chat}
-            
-            You shall initiate the first greeting.
-            <|model|>{{model's response goes here}}
-        """
+        greeting_prompt = "Create the opening greeting for the player using the seeded character context."
 
         greeting = self.db.generate_text(greeting_prompt, stage_name="Greeting")
         await socket.send_json({ "event": "message", "data": greeting })
@@ -116,6 +114,40 @@ class Character:
             return ""
 
         return sentiment
+
+    def build_system_prompt(self) -> str:
+        return "\n".join([
+            f"Enter RP mode. You are {self.name}.",
+            "Stay in character at all times.",
+            "Speak in first person.",
+            "Produce only perceivable dialogue or first-person nonverbal actions.",
+            "Do not reveal internal thoughts directly.",
+            "Maintain character fidelity throughout the conversation.",
+        ])
+
+    def build_seed_context_prompt(self, initial_context: InitialContext) -> str:
+        return format_prompt(
+            "Conversation-start context. Treat the following as the initial state at the beginning of the conversation. Later turns may supersede these details through the unfolding chat.",
+            [
+                ("Character definition", initial_context.character_definition),
+                ("Example dialogues", initial_context.example_dialogues),
+                ("Initial situation", initial_context.situation),
+                ("Initial sentiment towards player", initial_context.sentiment),
+                ("Initial relationship summary", initial_context.relationship_summary),
+                ("Initial long-term goals", "\n".join(initial_context.active_goals)),
+                ("Initial beliefs", "\n".join(initial_context.belief_state)),
+            ],
+        )
+
+    def build_initial_context(self) -> InitialContext:
+        return self.pipeline.initial_context_stage.run(TurnInput(prompt=""))
+
+    def initialize_message_loop_context(self) -> None:
+        initial_context = self.build_initial_context()
+        self.db.seed_response_context(
+            system_prompt=self.build_system_prompt(),
+            seed_context_prompt=self.build_seed_context_prompt(initial_context),
+        )
     
     def get_sentiment_filter(self):
         return {
@@ -332,6 +364,7 @@ class Character:
         if(prompt.strip() == ""):
             return ""
 
+        self.initialize_message_loop_context()
         result = self.pipeline.run(TurnInput(prompt=prompt))
         self.apply_turn_updates(result.terminal_update)
 
