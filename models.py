@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Sequence, Any
 from ollama._types import Message
 
@@ -24,6 +24,7 @@ class PromptCategory(Enum):
     LORE = "lore"
     MANIPULATION = "manipulation"
     PAST = "past"
+    JAILBREAK = "jailbreak"
 
 class MetadataCategory(Enum):
     KNOWLEDGE = "knowledge"
@@ -118,3 +119,61 @@ class AgentJudgeResult(BaseModel):
     raw_response: Any
     invoked_pass: bool
     args_pass: float
+
+
+class StageExpectationMode(str, Enum):
+    DETERMINISTIC = "deterministic"
+    JUDGE = "judge"
+
+
+class StageName(str, Enum):
+    PERCEPTION = "PerceptionStage"
+    GAP_ANALYSIS = "GapAnalysisStage"
+    RETRIEVAL_SUMMARIZE = "RetrievalStage.summarize"
+    STRATEGY = "StrategyStage"
+    RESPONSE = "ResponseStage"
+
+
+class StageDeterministicCheck(BaseModel):
+    metric_name: str
+    path: str
+    operator: str = "equals"
+    value: Any = None
+
+
+class StageJudgeMetric(BaseModel):
+    metric_name: str
+    guidance: str = ""
+
+
+class StageTestPrompt(BaseModel):
+    user_query: str
+    source_category: PromptCategory
+    target_stage: StageName
+    expectation_mode: StageExpectationMode
+    deterministic_checks: list[StageDeterministicCheck] = Field(default_factory=list)
+    judge_metrics: list[StageJudgeMetric] = Field(default_factory=list)
+    stage_inputs: dict[str, Any] = Field(default_factory=dict)
+    notes: str = ""
+
+
+class StageJudgeMetricResult(BaseModel):
+    metric_name: str
+    score: float
+    passed: bool
+    explanation: str
+
+
+class StageEvaluationResult(BaseModel):
+    user_query: str
+    source_category: PromptCategory
+    target_stage: StageName
+    expectation_mode: StageExpectationMode
+    metric_name: str
+    passed: bool
+    score: float
+    explanation: str
+    expected_value: Any = None
+    actual_value: Any = None
+    stage_output: str
+    notes: str = ""

@@ -41,6 +41,7 @@ class FakeAgent:
         self.perception_content = perception_content
         self.retrieval_summary_content = retrieval_summary_content or "summarized retrieved lore"
         self.strategy_tool_calls = []
+        self.strategy_content: str | None = None
         self.prompts: list[str] = []
 
     def run_prompt(self, **kwargs):
@@ -56,7 +57,7 @@ class FakeAgent:
             content = self.retrieval_summary_content
             tool_calls = []
         elif stage_name == "StrategyStage":
-            content = ""
+            content = self.strategy_content if self.strategy_content is not None else ""
             tool_calls = list(self.strategy_tool_calls)
         else:
             content = self.perception_content
@@ -324,6 +325,32 @@ class TurnPipelineTests(unittest.TestCase):
         self.assertEqual(result.strategy.immediate_actions, ["open_trade", "keep_talking"])
         self.assertEqual(result.terminal_update.external_actions, ["open_trade", "keep_talking"])
         self.assertIn("The strategy is not limited to dialogue alone. If carrying out the strategy would naturally involve an immediate in-world action, the NPC may use the provided action tools.", character.agent.prompts[2])
+
+    def test_strategy_stage_uses_llm_json_for_strategy_fields(self):
+        character = FakeCharacter()
+        character.agent.strategy_content = json.dumps({
+            "intention": "win the player's trust",
+            "conversation_goal": "invite further questions",
+            "risk_level": "medium",
+            "disclosure_level": "guarded",
+            "social_strategy": "warm but cautious",
+            "tone": "reassuring",
+            "verbosity": "brief",
+            "conversation_move": "answer_then_probe",
+        })
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="Can I trust you?"))
+
+        self.assertEqual(result.strategy.intention, "win the player's trust")
+        self.assertEqual(result.strategy.conversation_goal, "invite further questions")
+        self.assertEqual(result.strategy.risk_level, "medium")
+        self.assertEqual(result.strategy.disclosure_level, "guarded")
+        self.assertEqual(result.strategy.social_strategy, "warm but cautious")
+        self.assertEqual(result.strategy.tone, "reassuring")
+        self.assertEqual(result.strategy.verbosity, "brief")
+        self.assertEqual(result.strategy.conversation_move, "answer_then_probe")
+        self.assertEqual(result.strategy.immediate_actions, ["keep_talking"])
 
     def test_strategy_stage_can_end_conversation_via_tool(self):
         character = FakeCharacter()

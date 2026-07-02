@@ -7,6 +7,18 @@ logger = get_logger(__name__)
 
 
 class StrategyStage(LLMStage):
+    def get_default_strategy_payload(self) -> dict[str, str]:
+        return {
+            "intention": "",
+            "conversation_goal": "answer_plainly",
+            "risk_level": "low",
+            "disclosure_level": "normal",
+            "social_strategy": "neutral",
+            "tone": "in_character",
+            "verbosity": "normal",
+            "conversation_move": "answer",
+        }
+
     def get_prompt(
         self,
         initial_context: InitialContext,
@@ -77,7 +89,10 @@ class StrategyStage(LLMStage):
             },
         )
 
-        intention = self.select_intention(initial_context, perception, retrieved_context)
+        parsed_response = self.character.agent.parse_output(
+            response.content,
+            fallback=self.get_default_strategy_payload(),
+        )
         immediate_actions: list[str] = []
         new_sentiment = None
         sentiment_reasoning = ""
@@ -100,14 +115,14 @@ class StrategyStage(LLMStage):
             immediate_actions.append("keep_talking")
 
         return StrategyResult(
-            intention=intention,
-            conversation_goal=self.select_conversation_goal(initial_context, perception, retrieved_context),
-            risk_level=self.assess_risk(initial_context, perception, retrieved_context),
-            disclosure_level=self.decide_disclosure(initial_context, perception, retrieved_context),
-            social_strategy=self.select_social_strategy(initial_context, perception, retrieved_context),
-            tone=self.select_tone(initial_context, perception, retrieved_context),
-            verbosity=self.select_verbosity(initial_context, perception, retrieved_context),
-            conversation_move=self.select_conversation_move(initial_context, perception, retrieved_context),
+            intention=str(parsed_response.get("intention", "")),
+            conversation_goal=str(parsed_response.get("conversation_goal", "answer_plainly")),
+            risk_level=str(parsed_response.get("risk_level", "low")),
+            disclosure_level=str(parsed_response.get("disclosure_level", "normal")),
+            social_strategy=str(parsed_response.get("social_strategy", "neutral")),
+            tone=str(parsed_response.get("tone", "in_character")),
+            verbosity=str(parsed_response.get("verbosity", "normal")),
+            conversation_move=str(parsed_response.get("conversation_move", "answer")),
             immediate_actions=immediate_actions,
             new_sentiment=str(new_sentiment) if new_sentiment is not None else None,
             sentiment_reasoning=sentiment_reasoning,
@@ -127,75 +142,3 @@ class StrategyStage(LLMStage):
 
     def alert_guards(self, reasoning: str) -> dict[str, str]:
         return {"action": "alert_guards", "reasoning": reasoning}
-
-    def select_intention(
-        self,
-        initial_context: InitialContext,
-        perception: PerceptionResult,
-        retrieved_context: RetrievedContext,
-    ) -> str:
-        # TODO: Infer the NPC's conversational intention from strategy reasoning.
-        return "answer_briefly"
-
-    def select_conversation_goal(
-        self,
-        initial_context: InitialContext,
-        perception: PerceptionResult,
-        retrieved_context: RetrievedContext,
-    ) -> str:
-        # TODO: Choose the concrete conversation goal from structured reasoning.
-        return "answer_plainly"
-
-    def assess_risk(
-        self,
-        initial_context: InitialContext,
-        perception: PerceptionResult,
-        retrieved_context: RetrievedContext,
-    ) -> str:
-        # TODO: Compute risk level from threat, sensitivity, and social context.
-        return "low"
-
-    def decide_disclosure(
-        self,
-        initial_context: InitialContext,
-        perception: PerceptionResult,
-        retrieved_context: RetrievedContext,
-    ) -> str:
-        # TODO: Decide how much information the NPC should reveal.
-        return "normal"
-
-    def select_social_strategy(
-        self,
-        initial_context: InitialContext,
-        perception: PerceptionResult,
-        retrieved_context: RetrievedContext,
-    ) -> str:
-        # TODO: Select a social strategy such as trust-building or deception.
-        return "neutral"
-
-    def select_tone(
-        self,
-        initial_context: InitialContext,
-        perception: PerceptionResult,
-        retrieved_context: RetrievedContext,
-    ) -> str:
-        # TODO: Select the response tone from emotion and social strategy.
-        return "in_character"
-
-    def select_verbosity(
-        self,
-        initial_context: InitialContext,
-        perception: PerceptionResult,
-        retrieved_context: RetrievedContext,
-    ) -> str:
-        # TODO: Choose how concise or expansive the reply should be.
-        return "concise"
-
-    def select_conversation_move(
-        self,
-        initial_context: InitialContext,
-        perception: PerceptionResult,
-        retrieved_context: RetrievedContext,
-    ) -> str:
-        # TODO: Choose the next conversational move from the strategy result.
-        return "answer"

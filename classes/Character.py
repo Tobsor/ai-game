@@ -42,7 +42,10 @@ class Character:
     name: str
     faction: Faction
     pl_list: str
+    knowledge: str
+    past: str
     ali_chat: str
+    relations: str
     situation: str
     sentiment: str
     agent: NPCAgent
@@ -60,7 +63,10 @@ class Character:
         self.faction = parsed.faction
         self.id = parsed.name + str(parsed.faction)
         self.pl_list = parsed.pl_list
+        self.knowledge = parsed.knowledge
+        self.past = parsed.past
         self.ali_chat = parsed.ali_chat
+        self.relations = parsed.relations
         self.situation = situation
         self.ai_settings = settings or get_ai_settings()
         self.db = ChromaDBHelper(self.ai_settings)
