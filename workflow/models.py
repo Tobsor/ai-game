@@ -74,19 +74,21 @@ class ResponseResult:
 @dataclass
 class StateUpdate:
     changed: bool = False
-    summary: str = ""
-    values: list[str] = field(default_factory=list)
+    value: str = ""
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass
 class TerminalUpdateResult:
     sentiment: str | None = None
     sentiment_reasoning: str = ""
+    sentiment_tags: list[str] = field(default_factory=list)
     immediate_actions: list[str] = field(default_factory=list)
     relationship_update: StateUpdate = field(default_factory=StateUpdate)
     belief_update: StateUpdate = field(default_factory=StateUpdate)
     goal_update: StateUpdate = field(default_factory=StateUpdate)
     store_memory: bool = False
+    memory_tags: list[str] = field(default_factory=list)
     external_actions: list[str] = field(default_factory=list)
 
 

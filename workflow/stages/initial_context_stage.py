@@ -1,4 +1,5 @@
 from logger import get_logger
+from models import MetadataCategory
 from workflow.models import InitialContext, TurnInput
 from workflow.stages.base import Stage
 
@@ -42,6 +43,11 @@ class InitialContextStage(Stage):
         return "Relationship to player:\n" + relation_summary
 
     def get_active_goals(self) -> list[str]:
+        if hasattr(self.character, "get_character_documents"):
+            stored_goals = self.character.get_character_documents(MetadataCategory.GOAL)
+            if len(stored_goals) > 0:
+                return stored_goals
+
         prompt = (
             f"Summarize {self.character.name}'s core values, morality, short term goals, "
             "mid term goals, and long term goals based only on the retrieved character knowledge. "
@@ -75,5 +81,6 @@ class InitialContextStage(Stage):
         return []
 
     def get_belief_state(self) -> list[str]:
-        # TODO: Load durable NPC beliefs for downstream reasoning.
+        if hasattr(self.character, "get_character_documents"):
+            return self.character.get_character_documents(MetadataCategory.BELIEF)
         return []

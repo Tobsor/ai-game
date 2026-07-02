@@ -32,6 +32,8 @@ class MetadataCategory(Enum):
     SENTIMENT = "sentiment"
     MEMORY = "memory"
     RELATIONS = "relations"
+    BELIEF = "belief"
+    GOAL = "goal"
     LORE = "lore"
 
 class CognitiveAction(Enum):

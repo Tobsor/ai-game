@@ -1,5 +1,6 @@
 import chromadb
 from models import Metadata
+from typing import Any
 from ai import AISettings, create_chat_provider, create_embedding_provider, get_ai_settings
 from logger import get_logger
 
@@ -42,7 +43,7 @@ class ChromaDBHelper:
         self.messages = seed_messages + self.messages
         self.response_context_initialized = True
     
-    def add_embedding(self, id: str, text: str, metadata: Metadata | None):
+    def add_embedding(self, id: str, text: str, metadata: Metadata | dict[str, Any] | None):
         embedding = self.get_embedding(text)
 
         kwargs = {
@@ -52,7 +53,10 @@ class ChromaDBHelper:
         }
 
         if metadata is not None:
-            kwargs["metadatas"] = [metadata.model_dump(mode="json", exclude_none=True)]
+            if isinstance(metadata, Metadata):
+                kwargs["metadatas"] = [metadata.model_dump(mode="json", exclude_none=True)]
+            else:
+                kwargs["metadatas"] = [metadata]
 
         self.db.upsert(**kwargs)
 

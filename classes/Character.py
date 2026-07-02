@@ -1,11 +1,12 @@
 from classes.ChromaDBHelper import ChromaDBHelper
 from classes.NpcAgent import NPCAgent
 from ai import AISettings, get_ai_settings
-from models import Character as CharacterType, Faction, MetadataType, MetadataCategory, CognitiveAction, NPCAction, Sentiment
+from models import Character as CharacterType, Faction, Metadata, MetadataType, MetadataCategory, CognitiveAction, NPCAction, Sentiment
 from typing import Any
 from fastapi import WebSocket
 from server_models import ChatRequest
 import json
+from uuid import uuid4
 from workflow import TurnInput, TurnPipeline
 from workflow.models import InitialContext
 
@@ -156,8 +157,11 @@ class Character:
         )
     
     def get_sentiment_filter(self):
+        return self.get_character_category_filter(MetadataCategory.SENTIMENT)
+
+    def get_character_category_filter(self, category: MetadataCategory):
         return {
-           "$and" : [
+            "$and": [
                 {
                     "name": self.name,
                 },
@@ -165,53 +169,36 @@ class Character:
                     "type": MetadataType.CHARACTER.value,
                 },
                 {
-                    "category": MetadataCategory.SENTIMENT.value
-                }
+                    "category": category.value,
+                },
             ]
         }
 
     def get_sentiment(self):
-        results = self.db.db.get(
-            where=self.get_sentiment_filter(),
-            limit=3,
-            include=["documents"],
-        )
-        documents = results.get("documents") or []
-        if not isinstance(documents, list):
-            return ""
-
+        documents = self.get_character_documents(MetadataCategory.SENTIMENT, limit=3)
         sentiment_entries = [str(doc).strip() for doc in reversed(documents) if str(doc).strip()]
         return "\n".join(sentiment_entries)
+
+    def get_character_documents(self, category: MetadataCategory, limit: int | None = None) -> list[str]:
+        kwargs: dict[str, Any] = {
+            "where": self.get_character_category_filter(category),
+            "include": ["documents"],
+        }
+        if limit is not None:
+            kwargs["limit"] = limit
+
+        results = self.db.db.get(**kwargs)
+        documents = results.get("documents") or []
+        if not isinstance(documents, list):
+            return []
+
+        return [str(doc).strip() for doc in documents if str(doc).strip()]
     
     def get_memories(self):
-        return {
-            "$and" : [
-                {
-                    "name": self.name,
-                },
-                {
-                    "type": MetadataType.CHARACTER.value,
-                },
-                {
-                    "category": MetadataCategory.MEMORY.value
-                }
-            ]
-        }
+        return self.get_character_category_filter(MetadataCategory.MEMORY)
     
     def get_past(self):
-        return {
-            "$and" : [
-                {
-                    "name": self.name,
-                },
-                {
-                    "type": MetadataType.CHARACTER.value,
-                },
-                {
-                    "category": MetadataCategory.PAST.value
-                }
-            ]
-        }
+        return self.get_character_category_filter(MetadataCategory.PAST)
     
     def get_faction_knowledge(self):
         return {
@@ -239,19 +226,13 @@ class Character:
         }
     
     def get_relations(self):
-        return {
-            "$and" : [
-                {
-                    "char_name": self.name,
-                },
-                {
-                    "type": MetadataType.CHARACTER.value,
-                },
-                {
-                    "category": MetadataCategory.RELATIONS.value
-                }
-            ]
-        }
+        return self.get_character_category_filter(MetadataCategory.RELATIONS)
+
+    def get_goals(self):
+        return self.get_character_category_filter(MetadataCategory.GOAL)
+
+    def get_beliefs(self):
+        return self.get_character_category_filter(MetadataCategory.BELIEF)
     
     # Agent like behavior:
     # - remember: Query past related information
@@ -348,7 +329,7 @@ class Character:
     
         self.talk_ongoing = action != NPCAction.END_CONVERSATION
     
-    def change_sentiment(self, new_sentiment: str, reasoning: str):
+    def change_sentiment(self, new_sentiment: str, reasoning: str, tags: list[str] | None = None):
         """
         Tool function: When the character experiences a change in sentiment as consequence of the user prompt
 
@@ -364,7 +345,11 @@ class Character:
             return
         
         self.sentiment = new_sentiment + ": " + reasoning
-        # Add a db entry of sentiment change
+        self.add_character_state_embedding(
+            category=MetadataCategory.SENTIMENT,
+            text=self.sentiment,
+            tags=tags,
+        )
 
     def prompt(self, prompt: str):
         if(prompt.strip() == ""):
@@ -382,35 +367,128 @@ class Character:
         if terminal_update.sentiment is not None:
             self.change_sentiment(
                 new_sentiment=terminal_update.sentiment,
-                reasoning=terminal_update.sentiment_reasoning
+                reasoning=terminal_update.sentiment_reasoning,
+                tags=terminal_update.sentiment_tags,
             )
 
         self.immediate_actions(terminal_update.immediate_actions)
-        self.update_relationship(terminal_update.relationship_update)
-        self.update_beliefs(terminal_update.belief_update)
-        self.update_goals(terminal_update.goal_update)
+        self.update_relationship(terminal_update.relationship_update, tags=terminal_update.relationship_update.tags)
+        self.update_beliefs(terminal_update.belief_update, tags=terminal_update.belief_update.tags)
+        self.update_goals(terminal_update.goal_update, tags=terminal_update.goal_update.tags)
 
         if terminal_update.store_memory:
-            self.store_memory()
+            self.store_memory(tags=terminal_update.memory_tags)
 
         self.trigger_external_actions(terminal_update.external_actions)
 
-    def update_relationship(self, relationship_update):
-        # TODO: Persist relationship state changes returned by the terminal update stage.
+    def update_relationship(self, relationship_update, tags: list[str] | None = None):
+        self.persist_state_update(MetadataCategory.RELATIONS, relationship_update, tags=tags)
         return relationship_update
 
-    def update_beliefs(self, belief_update):
-        # TODO: Persist belief state changes returned by the terminal update stage.
+    def update_beliefs(self, belief_update, tags: list[str] | None = None):
+        self.persist_state_update(MetadataCategory.BELIEF, belief_update, tags=tags)
         return belief_update
 
-    def update_goals(self, goal_update):
-        # TODO: Persist goal state changes returned by the terminal update stage.
+    def update_goals(self, goal_update, tags: list[str] | None = None):
+        self.persist_state_update(MetadataCategory.GOAL, goal_update, tags=tags)
         return goal_update
 
-    def store_memory(self):
-        # TODO: Persist a conversation memory so it can be used by future retrieval stages.
-        return False
+    def store_memory(self, tags: list[str] | None = None):
+        memory_entry = self.build_latest_memory_entry()
+        if memory_entry == "":
+            return False
+
+        self.add_character_state_embedding(
+            category=MetadataCategory.MEMORY,
+            text=memory_entry,
+            tags=tags,
+        )
+        return True
 
     def trigger_external_actions(self, actions: list[str]):
         # TODO: Hand off non-dialogue world actions to the game simulation layer.
         return actions
+
+    def persist_state_update(self, category: MetadataCategory, state_update, tags: list[str] | None = None) -> None:
+        if getattr(state_update, "changed", False) != True:
+            return
+
+        entry = str(getattr(state_update, "value", "")).strip()
+        if entry == "":
+            return
+
+        self.add_character_state_embedding(
+            category=category,
+            text=entry,
+            tags=tags if tags is not None else getattr(state_update, "tags", []),
+        )
+
+    def build_latest_memory_entry(self) -> str:
+        last_user_message = ""
+        last_assistant_message = ""
+
+        for message in reversed(self.db.messages):
+            if not isinstance(message, dict):
+                continue
+
+            role = str(message.get("role", "")).strip()
+            content = str(message.get("content", "")).strip()
+            if content == "":
+                continue
+
+            if role == "assistant" and last_assistant_message == "":
+                last_assistant_message = content
+                continue
+
+            if role == "user" and last_user_message == "":
+                last_user_message = content
+
+            if last_user_message != "" and last_assistant_message != "":
+                break
+
+        if last_user_message == "" and last_assistant_message == "":
+            return ""
+
+        memory_parts = [
+            f"Player: {last_user_message}" if last_user_message != "" else "",
+            f"{self.name}: {last_assistant_message}" if last_assistant_message != "" else "",
+        ]
+        return "\n".join(part for part in memory_parts if part != "")
+
+    def add_character_state_embedding(self, category: MetadataCategory, text: str, tags: list[str] | None = None) -> None:
+        if text.strip() == "":
+            return
+
+        self.db.add_embedding(
+            id=self.create_state_embedding_id(category),
+            text=text.strip(),
+            metadata=self.build_character_embedding_metadata(category=category, tags=tags),
+        )
+
+    def create_state_embedding_id(self, category: MetadataCategory) -> str:
+        return f"runtime-{self.id}-{category.value}-{uuid4().hex}"
+
+    def build_character_embedding_metadata(self, category: MetadataCategory, tags: list[str] | None = None) -> dict[str, Any]:
+        metadata = Metadata(
+            faction=self.faction,
+            type=MetadataType.CHARACTER,
+            category=category,
+            name=self.name,
+        ).model_dump(mode="json", exclude_none=True)
+        normalized_tags = self.normalize_tags(tags or [])
+        if len(normalized_tags) > 0:
+            metadata["tags"] = json.dumps(normalized_tags, ensure_ascii=True)
+            for tag in normalized_tags:
+                metadata[tag] = True
+        return metadata
+
+    def normalize_tags(self, tags: list[str]) -> list[str]:
+        normalized_tags: list[str] = []
+        seen_tags: set[str] = set()
+        for tag in tags:
+            normalized = str(tag).strip()
+            if normalized == "" or normalized in seen_tags:
+                continue
+            seen_tags.add(normalized)
+            normalized_tags.append(normalized)
+        return normalized_tags
