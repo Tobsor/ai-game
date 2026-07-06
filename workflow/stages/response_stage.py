@@ -9,6 +9,7 @@ logger = get_logger(__name__)
 class ResponseStage(LLMStage):
     def get_turn_prompt(
         self,
+        initial_context: InitialContext,
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
         strategy: StrategyResult,
@@ -17,6 +18,7 @@ class ResponseStage(LLMStage):
             "Respond to the current turn using the latest player input, retrieved context, and response strategy.",
             [
                 ("Player input", perception.raw_prompt),
+                ("Recent conversation state", "\n".join(initial_context.recent_turns)),
                 ("Retrieved context", retrieved_context.combined_context),
                 (
                     "Response strategy",
@@ -50,7 +52,7 @@ class ResponseStage(LLMStage):
         retrieved_context: RetrievedContext,
         strategy: StrategyResult,
     ) -> str:
-        return self.get_turn_prompt(perception, retrieved_context, strategy)
+        return self.get_turn_prompt(initial_context, perception, retrieved_context, strategy)
 
     def run(
         self,
@@ -59,7 +61,7 @@ class ResponseStage(LLMStage):
         retrieved_context: RetrievedContext,
         strategy: StrategyResult,
     ) -> ResponseResult:
-        turn_prompt = self.get_turn_prompt(perception, retrieved_context, strategy)
+        turn_prompt = self.get_turn_prompt(initial_context, perception, retrieved_context, strategy)
 
         logger.verbose("Response stage assembled turn prompt")
         logger.debug("Turn prompt: %s", turn_prompt)

@@ -25,13 +25,14 @@ class StrategyStage(LLMStage):
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
     ) -> str:
-        # TODO: Add the NPC goals to the prompt
         return format_prompt(
             "Choose the NPC's high-level response strategy based on the interpreted player input and the context retrieved so far.",
             [
                 ("Player input", perception.raw_prompt),
                 ("Character sentiment", initial_context.sentiment),
                 ("Relationship summary", initial_context.relationship_summary),
+                ("Active goals", "\n".join(initial_context.active_goals)),
+                ("Recent conversation state", "\n".join(initial_context.recent_turns)),
                 ("Retrieved context", retrieved_context.combined_context),
                 (
                     "Strategy guidance",

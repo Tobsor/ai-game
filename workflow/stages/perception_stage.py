@@ -28,6 +28,10 @@ class PerceptionStage(LLMStage):
                     ]).strip(),
                 ),
                 (
+                    "Recent conversation state",
+                    "\n".join(initial_context.recent_turns),
+                ),
+                (
                     "Decision rubric",
                     "\n".join([
                         "Analyze the player's message and infer player_intent as a concise description of what the player is trying to achieve, or unknown if it cannot be determined.",

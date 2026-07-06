@@ -34,12 +34,19 @@ class FakeAgent:
         gap_tool_calls=None,
         perception_content: str | None = None,
         retrieval_summary_content: str | None = None,
+        recent_turn_summary_content: str | None = None,
     ):
         self.tool_calls = tool_calls or []
         self.gap_content = gap_content
         self.gap_tool_calls = gap_tool_calls or []
         self.perception_content = perception_content
         self.retrieval_summary_content = retrieval_summary_content or "summarized retrieved lore"
+        self.recent_turn_summary_content = recent_turn_summary_content or "\n".join([
+            "Topic: recent trade discussion",
+            "Open loops: the player asked for a discount",
+            "Momentum: friendly but cautious",
+            "Commitments: Mira offered to explain her prices",
+        ])
         self.strategy_tool_calls = []
         self.strategy_content: str | None = None
         self.prompts: list[str] = []
@@ -53,6 +60,9 @@ class FakeAgent:
             if content is None:
                 content = self.default_gap_content()
             tool_calls = list(self.gap_tool_calls)
+        elif stage_name == "InitialContextStage.recent_turns":
+            content = self.recent_turn_summary_content
+            tool_calls = []
         elif stage_name == "RetrievalStage.summarize":
             content = self.retrieval_summary_content
             tool_calls = []
@@ -156,6 +166,7 @@ class FakeCharacter:
         gap_tool_calls=None,
         perception_content: str | None = None,
         retrieval_summary_content: str | None = None,
+        recent_turn_summary_content: str | None = None,
     ):
         self.name = "Mira"
         self.situation = "At the market"
@@ -168,6 +179,7 @@ class FakeCharacter:
             gap_tool_calls=gap_tool_calls,
             perception_content=perception_content,
             retrieval_summary_content=retrieval_summary_content,
+            recent_turn_summary_content=recent_turn_summary_content,
         )
         self.db = FakeDB()
         self.talk_ongoing = True
@@ -311,6 +323,59 @@ class TurnPipelineTests(unittest.TestCase):
         self.assertEqual(result.perception.manipulation_signal, "subtle_flattery")
         self.assertEqual(result.perception.topic_sensitivity, "normal")
         self.assertEqual(result.perception.tool_calls, [])
+
+    def test_initial_context_uses_raw_recent_excerpt_for_short_history(self):
+        character = FakeCharacter()
+        character.db.messages = [
+            {"role": "system", "content": "Enter RP mode."},
+            {"role": "user", "content": "Conversation-start context. Treat the following as the initial state."},
+            {"role": "user", "content": "Can you show me what herbs you have?"},
+            {"role": "assistant", "content": "I have thyme, sage, and a little dried mint left."},
+        ]
+        pipeline = TurnPipeline(character)
+
+        initial_context = pipeline.initial_context_stage.run(TurnInput(prompt=""))
+
+        self.assertEqual(len(initial_context.recent_turns), 1)
+        self.assertIn("Recent conversation excerpt:", initial_context.recent_turns[0])
+        self.assertIn("Player: Can you show me what herbs you have?", initial_context.recent_turns[0])
+        self.assertIn("Mira: I have thyme, sage, and a little dried mint left.", initial_context.recent_turns[0])
+        self.assertEqual(character.agent.prompts, [])
+
+    def test_initial_context_summarizes_recent_history_when_excerpt_is_large(self):
+        character = FakeCharacter()
+        long_player_message = "Tell me everything about the prices, origins, storage, and quality of these herbs. " * 5
+        long_npc_message = "The stock came in from the southern caravans, and I keep the rare bundles sealed away for serious buyers. " * 4
+        character.db.messages = [
+            {"role": "user", "content": long_player_message},
+            {"role": "assistant", "content": long_npc_message},
+            {"role": "user", "content": "Would you lower the price if I bought three bundles and paid today?"},
+            {"role": "assistant", "content": "Maybe, if you are buying enough to make it worth my while."},
+        ]
+        pipeline = TurnPipeline(character)
+
+        initial_context = pipeline.initial_context_stage.run(TurnInput(prompt=""))
+
+        self.assertEqual(initial_context.recent_turns, [character.agent.recent_turn_summary_content])
+        self.assertEqual(len(character.agent.prompts), 1)
+        self.assertIn("Summarize only the immediate conversational state", character.agent.prompts[0])
+
+    def test_recent_conversation_state_flows_into_stage_prompts(self):
+        character = FakeCharacter()
+        character.db.messages = [
+            {"role": "user", "content": "Can you show me what herbs you have?"},
+            {"role": "assistant", "content": "I have thyme, sage, and a little dried mint left."},
+        ]
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="What would you recommend for sleep?"))
+
+        self.assertIn("Recent conversation state", result.perception.stage_prompt)
+        self.assertIn("Recent conversation excerpt:", result.perception.stage_prompt)
+        self.assertIn("Recent conversation state", character.agent.prompts[2])
+        self.assertIn("Recent conversation excerpt:", character.agent.prompts[2])
+        self.assertIn("Recent conversation state", result.response.turn_prompt)
+        self.assertIn("Recent conversation excerpt:", result.response.turn_prompt)
 
     def test_strategy_stage_uses_immediate_action_tools(self):
         character = FakeCharacter()
