@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from models import PromptCategory, StageExpectationMode, StageJudgeMetric, StageName, StageTestPrompt
 from test.AgentTest import AgentTest
-from workflow.models import GapAnalysisResult, InitialContext, ResponseResult
+from workflow.models import AppraisalResult, EmotionResult, GapAnalysisResult, InitialContext, ResponseResult
 
 import json
 
@@ -26,9 +26,17 @@ class RecordingResponseStage:
     def __init__(self):
         self.last_args = None
 
-    def run(self, initial_context, perception, retrieved_context, strategy):
-        self.last_args = (initial_context, perception, retrieved_context, strategy)
+    def run(self, initial_context, perception, retrieved_context, appraisal, emotion, strategy):
+        self.last_args = (initial_context, perception, retrieved_context, appraisal, emotion, strategy)
         return ResponseResult(reply="simulated reply", turn_prompt="turn prompt")
+
+
+class RecordingAppraisalStage:
+    def run(self, initial_context, perception, retrieved_context):
+        return (
+            AppraisalResult(relevance=0.3, valence=0.2, attribution_source="player", summary="Mildly positive trade opportunity."),
+            EmotionResult(primary="interest", secondary=["curiosity"], intensity=0.4),
+        )
 
 
 class FakeCharacter:
@@ -47,6 +55,7 @@ class FakeCharacter:
             perception_stage=FailingStage(),
             gap_analysis_stage=RecordingGapAnalysisStage(),
             retrieval_stage=FailingStage(),
+            appraisal_stage=RecordingAppraisalStage(),
             strategy_stage=FailingStage(),
             response_stage=RecordingResponseStage(),
         )
@@ -217,12 +226,14 @@ class AgentTestTests(unittest.TestCase):
         )
 
         result, execution_context = agent_test.execute_response_stage(character, prompt)
-        _, perception, retrieved_context, strategy = character.pipeline.response_stage.last_args
+        _, perception, retrieved_context, appraisal, emotion, strategy = character.pipeline.response_stage.last_args
 
         self.assertTrue(character.initialized)
         self.assertEqual(result.reply, "simulated reply")
         self.assertEqual(perception.player_intent, "buy_goods")
         self.assertEqual(retrieved_context.combined_context, "Mira sells herbs and travel supplies.")
+        self.assertEqual(appraisal.summary, "Mildly positive trade opportunity.")
+        self.assertEqual(emotion.primary, "interest")
         self.assertEqual(strategy.immediate_actions, ["open_trade", "keep_talking"])
         self.assertEqual(execution_context["gap_analysis"]["tool_calls"][0]["function"]["name"], "recall_knowledge")
 

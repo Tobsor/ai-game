@@ -24,6 +24,12 @@ class InitialContext:
 class PerceptionResult:
     raw_prompt: str
     stage_prompt: str = ""
+    summary: str = ""
+    perceived_intent: list[str] = field(default_factory=list)
+    perceived_attitude: list[str] = field(default_factory=list)
+    relevant_topics: list[str] = field(default_factory=list)
+    target: list[str] = field(default_factory=list)
+    confidence: float = 0.0
     player_intent: str = "unknown"
     player_emotion: str = "neutral"
     request_type: str = "general"
@@ -48,6 +54,28 @@ class RetrievedContext:
     relationship_context: str = ""
     knowledge_context: str = ""
     social_context: str = ""
+
+
+@dataclass
+class AppraisalResult:
+    relevance: float = 0.0
+    valence: float = 0.0
+    goal_impact: float = 0.0
+    social_self_impact: float = 0.0
+    threat: float = 0.0
+    control: float = 0.5
+    attribution_source: str = "unknown"
+    attribution_responsibility: float = 0.0
+    summary: str = ""
+    stage_prompt: str = ""
+
+
+@dataclass
+class EmotionResult:
+    primary: str = "neutral"
+    secondary: list[str] = field(default_factory=list)
+    intensity: float = 0.0
+    stage_prompt: str = ""
 
 
 @dataclass
@@ -98,6 +126,8 @@ class TurnResult:
     perception: PerceptionResult
     gap_analysis: GapAnalysisResult
     retrieved_context: RetrievedContext
+    appraisal: AppraisalResult
+    emotion: EmotionResult
     strategy: StrategyResult
     response: ResponseResult
     terminal_update: TerminalUpdateResult

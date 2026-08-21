@@ -1,5 +1,7 @@
 from logger import get_logger
 from workflow.models import (
+    AppraisalResult,
+    EmotionResult,
     InitialContext,
     PerceptionResult,
     ResponseResult,
@@ -20,6 +22,8 @@ class TerminalUpdateStage(LLMStage):
         initial_context: InitialContext,
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
+        appraisal: AppraisalResult | None,
+        emotion: EmotionResult | None,
         strategy: StrategyResult,
         response: ResponseResult,
     ) -> str:
@@ -29,6 +33,8 @@ class TerminalUpdateStage(LLMStage):
                 ("Player input", perception.raw_prompt),
                 ("Response", response.reply),
                 ("Current sentiment", initial_context.sentiment),
+                ("Appraisal", self.describe_appraisal(appraisal)),
+                ("Emotional reaction", self.describe_emotion(emotion)),
                 ("Strategy", f"actions={', '.join(strategy.immediate_actions)}, new_sentiment={strategy.new_sentiment}"),
                 ("Expected result", "Terminal updates covering sentiment, relationship changes, belief updates, goal updates, memory storage, and external actions."),
             ],
@@ -39,6 +45,8 @@ class TerminalUpdateStage(LLMStage):
         initial_context: InitialContext,
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
+        appraisal: AppraisalResult | None,
+        emotion: EmotionResult | None,
         strategy: StrategyResult,
         response: ResponseResult,
     ) -> TerminalUpdateResult:
@@ -46,30 +54,30 @@ class TerminalUpdateStage(LLMStage):
         return TerminalUpdateResult(
             sentiment=strategy.new_sentiment,
             sentiment_reasoning=strategy.sentiment_reasoning,
-            sentiment_tags=self.build_sentiment_tags(initial_context, perception, strategy),
+            sentiment_tags=self.build_sentiment_tags(initial_context, perception, appraisal, emotion, strategy),
             immediate_actions=list(strategy.immediate_actions),
             relationship_update=self.update_relationship(
                 initial_context,
                 perception,
                 response,
-                tags=self.build_relationship_tags(initial_context, perception, response),
+                tags=self.build_relationship_tags(initial_context, perception, appraisal, emotion, response),
             ),
             belief_update=self.update_beliefs(
                 initial_context,
                 perception,
                 retrieved_context,
                 response,
-                tags=self.build_belief_tags(initial_context, perception, retrieved_context, response),
+                tags=self.build_belief_tags(initial_context, perception, retrieved_context, appraisal, emotion, response),
             ),
             goal_update=self.update_goals(
                 initial_context,
                 perception,
                 retrieved_context,
                 response,
-                tags=self.build_goal_tags(initial_context, perception, retrieved_context, response),
+                tags=self.build_goal_tags(initial_context, perception, retrieved_context, appraisal, emotion, response),
             ),
             store_memory=self.store_memory(initial_context, perception, response),
-            memory_tags=self.build_memory_tags(initial_context, perception, response, strategy),
+            memory_tags=self.build_memory_tags(initial_context, perception, appraisal, emotion, response, strategy),
             external_actions=self.trigger_external_actions(initial_context, perception, response, strategy),
         )
 
@@ -128,11 +136,15 @@ class TerminalUpdateStage(LLMStage):
         self,
         initial_context: InitialContext,
         perception: PerceptionResult,
+        appraisal: AppraisalResult | None,
+        emotion: EmotionResult | None,
         response: ResponseResult,
     ) -> list[str]:
         return self.combine_tags(
             ["relationship", "social"],
             self.build_perception_tags(perception),
+            self.build_appraisal_tags(appraisal),
+            self.build_emotion_tags(emotion),
             [initial_context.sentiment],
         )
 
@@ -141,12 +153,16 @@ class TerminalUpdateStage(LLMStage):
         initial_context: InitialContext,
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
+        appraisal: AppraisalResult | None,
+        emotion: EmotionResult | None,
         response: ResponseResult,
     ) -> list[str]:
         return self.combine_tags(
             ["belief", "inference"],
             self.build_perception_tags(perception),
             self.build_retrieved_context_tags(retrieved_context),
+            self.build_appraisal_tags(appraisal),
+            self.build_emotion_tags(emotion),
         )
 
     def build_goal_tags(
@@ -154,36 +170,48 @@ class TerminalUpdateStage(LLMStage):
         initial_context: InitialContext,
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
+        appraisal: AppraisalResult | None,
+        emotion: EmotionResult | None,
         response: ResponseResult,
     ) -> list[str]:
         return self.combine_tags(
             ["goal", "planning"],
             self.build_perception_tags(perception),
             self.build_retrieved_context_tags(retrieved_context),
+            self.build_appraisal_tags(appraisal),
+            self.build_emotion_tags(emotion),
         )
 
     def build_sentiment_tags(
         self,
         initial_context: InitialContext,
         perception: PerceptionResult,
+        appraisal: AppraisalResult | None,
+        emotion: EmotionResult | None,
         strategy: StrategyResult,
     ) -> list[str]:
         return self.combine_tags(
             ["sentiment"],
             [strategy.new_sentiment or "", initial_context.sentiment, perception.player_emotion],
             self.build_perception_tags(perception),
+            self.build_appraisal_tags(appraisal),
+            self.build_emotion_tags(emotion),
         )
 
     def build_memory_tags(
         self,
         initial_context: InitialContext,
         perception: PerceptionResult,
+        appraisal: AppraisalResult | None,
+        emotion: EmotionResult | None,
         response: ResponseResult,
         strategy: StrategyResult,
     ) -> list[str]:
         return self.combine_tags(
             ["memory", "conversation"],
             self.build_perception_tags(perception),
+            self.build_appraisal_tags(appraisal),
+            self.build_emotion_tags(emotion),
             [strategy.conversation_move, strategy.conversation_goal],
         )
 
@@ -210,6 +238,53 @@ class TerminalUpdateStage(LLMStage):
         if retrieved_context.social_context.strip() != "":
             tags.append("social_context")
         return self.combine_tags(tags)
+
+    def build_appraisal_tags(self, appraisal: AppraisalResult | None) -> list[str]:
+        if appraisal is None:
+            return []
+        tags = ["appraisal", appraisal.attribution_source]
+        if appraisal.relevance >= 0.7:
+            tags.append("high relevance")
+        if appraisal.threat >= 0.5:
+            tags.append("threat")
+        if appraisal.valence < -0.25:
+            tags.append("negative valence")
+        elif appraisal.valence > 0.25:
+            tags.append("positive valence")
+        if appraisal.social_self_impact < -0.25:
+            tags.append("social injury")
+        elif appraisal.social_self_impact > 0.25:
+            tags.append("social boost")
+        return self.combine_tags(tags)
+
+    def build_emotion_tags(self, emotion: EmotionResult | None) -> list[str]:
+        if emotion is None:
+            return []
+        return self.combine_tags(["emotion", emotion.primary], emotion.secondary)
+
+    def describe_appraisal(self, appraisal: AppraisalResult | None) -> str:
+        if appraisal is None:
+            return "no appraisal available"
+        return "\n".join([
+            f"relevance={appraisal.relevance}",
+            f"valence={appraisal.valence}",
+            f"goal_impact={appraisal.goal_impact}",
+            f"social_self_impact={appraisal.social_self_impact}",
+            f"threat={appraisal.threat}",
+            f"control={appraisal.control}",
+            f"attribution_source={appraisal.attribution_source}",
+            f"attribution_responsibility={appraisal.attribution_responsibility}",
+            f"summary={appraisal.summary}",
+        ])
+
+    def describe_emotion(self, emotion: EmotionResult | None) -> str:
+        if emotion is None:
+            return "no emotional reaction available"
+        return "\n".join([
+            f"primary={emotion.primary}",
+            f"secondary={', '.join(emotion.secondary)}",
+            f"intensity={emotion.intensity}",
+        ])
 
     def combine_tags(self, *tag_groups: list[str]) -> list[str]:
         combined_tags: list[str] = []

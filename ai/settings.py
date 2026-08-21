@@ -77,8 +77,9 @@ BUILT_IN_PROFILES: dict[str, AISettings] = {
         ),
         judge_llm=RoleProviderConfig(
             provider="huggingface",
-            model="mistralai/Mistral-7B-Instruct-v0.2:featherless-ai",
+            model="Qwen/Qwen2.5-7B-Instruct:together",
             api_key_env="HF_API_KEY",
+            base_url="https://router.huggingface.co/v1"
         ),
         embedding_model=RoleProviderConfig(
             provider="huggingface",

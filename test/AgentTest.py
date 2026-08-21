@@ -3,6 +3,7 @@ import json
 import os
 import re
 from dataclasses import asdict, is_dataclass
+from pathlib import Path
 from typing import Any, Sequence
 
 from ai import (
@@ -24,7 +25,12 @@ from models import (
     StageName,
     StageTestPrompt,
 )
-from workflow.models import GapAnalysisResult, PerceptionResult, RetrievedContext, StrategyResult, TurnInput
+from workflow.models import AppraisalResult, EmotionResult, GapAnalysisResult, PerceptionResult, RetrievedContext, StrategyResult, TurnInput
+from test.stage_test_utils import (
+    extend_vector_state_from_config,
+    load_vector_state_config,
+    save_vector_snapshot,
+)
 
 script_dir = os.path.dirname(__file__)
 configure_logging()
@@ -35,7 +41,9 @@ class AgentTest:
     SUPPORTED_STAGES = {
         StageName.PERCEPTION,
         StageName.GAP_ANALYSIS,
+        StageName.RETRIEVAL_RUN,
         StageName.RETRIEVAL_SUMMARIZE,
+        StageName.APPRAISAL,
         StageName.STRATEGY,
         StageName.RESPONSE,
     }
@@ -60,6 +68,16 @@ class AgentTest:
             "unsupported_fact_omission": "Check whether the summary avoids inventing unsupported facts or conclusions.",
             "downstream_usefulness": "Check whether the summary would be useful as concise response context for the next stage.",
             "knowledge_scope_alignment": "Check whether the retained information seems reasonably aligned with what {character_name} could realistically know or retrieve.",
+        },
+        StageName.RETRIEVAL_RUN: {
+            "fetch_relevance": "Check whether the executed retrieval operations match the context {character_name} needs before answering.",
+            "context_relevance": "Check whether the retrieved context is relevant to the player's message.",
+            "summary_usefulness": "Check whether the combined retrieved context gives downstream stages useful, concise information.",
+        },
+        StageName.APPRAISAL: {
+            "appraisal_plausibility": "Check whether the appraisal reasonably evaluates the final perception against {character_name}'s values, goals, relationship state, and situation.",
+            "emotion_coherence": "Check whether the emotional reaction follows naturally from the appraisal and fits {character_name}.",
+            "attribution_reasonability": "Check whether the attribution source and responsibility are reasonable for the perceived event.",
         },
         StageName.STRATEGY: {
             "character_fit": "Check whether the strategy fits {character_name}'s personality, motives, and social behavior.",
@@ -112,7 +130,12 @@ class AgentTest:
                 continue
 
             self.reset_character_state(character)
+            vector_state_context = self.prepare_vector_state(character, prompt)
             stage_output, execution_context = self.execute_stage(character, prompt)
+            execution_context["vector_state"] = vector_state_context
+            snapshot_context = self.save_vector_state_snapshot(character, prompt)
+            if snapshot_context is not None:
+                execution_context["vector_snapshot"] = snapshot_context
             stage_output_json = self.serialize_value(stage_output)
 
             executed_prompts.append({
@@ -174,8 +197,12 @@ class AgentTest:
             return self.execute_perception_stage(character, prompt)
         if prompt.target_stage == StageName.GAP_ANALYSIS:
             return self.execute_gap_analysis_stage(character, prompt)
+        if prompt.target_stage == StageName.RETRIEVAL_RUN:
+            return self.execute_retrieval_run_stage(character, prompt)
         if prompt.target_stage == StageName.RETRIEVAL_SUMMARIZE:
             return self.execute_retrieval_summary_stage(character, prompt)
+        if prompt.target_stage == StageName.APPRAISAL:
+            return self.execute_appraisal_stage(character, prompt)
         if prompt.target_stage == StageName.STRATEGY:
             return self.execute_strategy_stage(character, prompt)
         if prompt.target_stage == StageName.RESPONSE:
@@ -209,6 +236,22 @@ class AgentTest:
 
         return gap_analysis, {
             "perception": self.to_plain_data(perception),
+            "gap_analysis_tool_names": [
+                tool_call.function.name for tool_call in gap_analysis.tool_calls
+            ],
+        }
+
+    def execute_retrieval_run_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
+        perception = self.simulate_perception_result(character, prompt)
+        gap_analysis = self.simulate_gap_analysis_result(character, prompt)
+        retrieved_context = character.pipeline.retrieval_stage.run(perception, gap_analysis)
+
+        return retrieved_context, {
+            "perception": self.to_plain_data(perception),
+            "gap_analysis": self.to_plain_data(gap_analysis),
+            "gap_analysis_tool_names": [
+                tool_call.function.name for tool_call in gap_analysis.tool_calls
+            ],
         }
 
     def execute_retrieval_summary_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
@@ -221,17 +264,32 @@ class AgentTest:
             "raw_retrieved_context": raw_context,
         }
 
+    def execute_appraisal_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
+        initial_context = character.build_initial_context()
+        perception = self.simulate_perception_result(character, prompt)
+        retrieved_context = self.simulate_retrieved_context_result(character, prompt)
+        appraisal, emotion = character.pipeline.appraisal_stage.run(initial_context, perception, retrieved_context)
+
+        return {"appraisal": appraisal, "emotion": emotion}, {
+            "initial_context": self.to_plain_data(initial_context),
+            "perception": self.to_plain_data(perception),
+            "retrieved_context": self.to_plain_data(retrieved_context),
+        }
+
     def execute_strategy_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
         initial_context = character.build_initial_context()
         perception = self.simulate_perception_result(character, prompt)
         gap_analysis = self.simulate_gap_analysis_result(character, prompt)
         retrieved_context = self.simulate_retrieved_context_result(character, prompt)
-        strategy = character.pipeline.strategy_stage.run(initial_context, perception, retrieved_context)
+        appraisal, emotion = self.simulate_appraisal_emotion_result(character, prompt)
+        strategy = character.pipeline.strategy_stage.run(initial_context, perception, retrieved_context, appraisal, emotion)
         return strategy, {
             "initial_context": self.to_plain_data(initial_context),
             "perception": self.to_plain_data(perception),
             "gap_analysis": self.to_plain_data(gap_analysis),
             "retrieved_context": self.to_plain_data(retrieved_context),
+            "appraisal": self.to_plain_data(appraisal),
+            "emotion": self.to_plain_data(emotion),
         }
 
     def execute_response_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
@@ -240,14 +298,17 @@ class AgentTest:
         perception = self.simulate_perception_result(character, prompt)
         gap_analysis = self.simulate_gap_analysis_result(character, prompt)
         retrieved_context = self.simulate_retrieved_context_result(character, prompt)
+        appraisal, emotion = self.simulate_appraisal_emotion_result(character, prompt)
         strategy = self.simulate_strategy_result(character, prompt)
-        response = character.pipeline.response_stage.run(initial_context, perception, retrieved_context, strategy)
+        response = character.pipeline.response_stage.run(initial_context, perception, retrieved_context, appraisal, emotion, strategy)
 
         return response, {
             "initial_context": self.to_plain_data(initial_context),
             "perception": self.to_plain_data(perception),
             "gap_analysis": self.to_plain_data(gap_analysis),
             "retrieved_context": self.to_plain_data(retrieved_context),
+            "appraisal": self.to_plain_data(appraisal),
+            "emotion": self.to_plain_data(emotion),
             "strategy": self.to_plain_data(strategy),
         }
 
@@ -268,6 +329,12 @@ class AgentTest:
         payload = self.normalize_perception_payload(payload)
         return PerceptionResult(
             raw_prompt=prompt.user_query,
+            summary=self.read_string(payload, "summary", ""),
+            perceived_intent=self.read_string_list(payload, "perceived_intent"),
+            perceived_attitude=self.read_string_list(payload, "perceived_attitude"),
+            relevant_topics=self.read_string_list(payload, "relevant_topics"),
+            target=self.read_string_list(payload, "target"),
+            confidence=self.read_float(payload, "confidence", 0.0, 0.0, 1.0),
             player_intent=self.read_string(payload, "player_intent", "unknown"),
             player_emotion=self.read_string(payload, "player_emotion", "neutral"),
             request_type=self.read_string(payload, "request_type", "general"),
@@ -309,13 +376,47 @@ class AgentTest:
             social_context=self.read_string(payload, "social_context", ""),
         )
 
+    def simulate_appraisal_emotion_result(self, character: Character, prompt: StageTestPrompt) -> tuple[AppraisalResult, EmotionResult]:
+        payload = self.get_test_payload(prompt, "appraisal")
+        if payload is None:
+            initial_context = character.build_initial_context()
+            perception = self.simulate_perception_result(character, prompt)
+            retrieved_context = self.simulate_retrieved_context_result(character, prompt)
+            return character.pipeline.appraisal_stage.run(initial_context, perception, retrieved_context)
+
+        payload = self.normalize_appraisal_payload(payload)
+        emotion_payload = self.normalize_emotion_payload(self.get_test_payload(prompt, "emotion") or payload.get("emotion", {}))
+        appraisal_payload = payload.get("appraisal", payload)
+        attribution_payload = appraisal_payload.get("attribution", {})
+        if not isinstance(attribution_payload, dict):
+            attribution_payload = {}
+        return (
+            AppraisalResult(
+                relevance=self.read_float(appraisal_payload, "relevance", 0.0, 0.0, 1.0),
+                valence=self.read_float(appraisal_payload, "valence", 0.0, -1.0, 1.0),
+                goal_impact=self.read_float(appraisal_payload, "goal_impact", 0.0, -1.0, 1.0),
+                social_self_impact=self.read_float(appraisal_payload, "social_self_impact", 0.0, -1.0, 1.0),
+                threat=self.read_float(appraisal_payload, "threat", 0.0, 0.0, 1.0),
+                control=self.read_float(appraisal_payload, "control", 0.5, 0.0, 1.0),
+                attribution_source=self.read_string(attribution_payload, "source", "unknown"),
+                attribution_responsibility=self.read_float(attribution_payload, "responsibility", 0.0, 0.0, 1.0),
+                summary=self.read_string(appraisal_payload, "summary", ""),
+            ),
+            EmotionResult(
+                primary=self.read_string(emotion_payload, "primary", "neutral"),
+                secondary=self.read_string_list(emotion_payload, "secondary"),
+                intensity=self.read_float(emotion_payload, "intensity", 0.0, 0.0, 1.0),
+            ),
+        )
+
     def simulate_strategy_result(self, character: Character, prompt: StageTestPrompt) -> StrategyResult:
         payload = self.get_test_payload(prompt, "strategy")
         if payload is None:
             initial_context = character.build_initial_context()
             perception = self.simulate_perception_result(character, prompt)
             retrieved_context = self.simulate_retrieved_context_result(character, prompt)
-            return character.pipeline.strategy_stage.run(initial_context, perception, retrieved_context)
+            appraisal, emotion = self.simulate_appraisal_emotion_result(character, prompt)
+            return character.pipeline.strategy_stage.run(initial_context, perception, retrieved_context, appraisal, emotion)
 
         payload = self.normalize_strategy_payload(payload)
         immediate_actions = self.read_string_list(payload, "immediate_actions")
@@ -374,6 +475,12 @@ class AgentTest:
             "threat_signal": payload.get("threat_signal", "none"),
             "manipulation_signal": payload.get("manipulation_signal", "none"),
             "topic_sensitivity": payload.get("topic_sensitivity", "normal"),
+            "summary": payload.get("summary", ""),
+            "perceived_intent": payload.get("perceived_intent", []),
+            "perceived_attitude": payload.get("perceived_attitude", []),
+            "relevant_topics": payload.get("relevant_topics", []),
+            "target": payload.get("target", []),
+            "confidence": payload.get("confidence", 0.0),
         }
 
     def normalize_gap_analysis_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -389,6 +496,25 @@ class AgentTest:
             "relationship_context": payload.get("relationship_context", ""),
             "knowledge_context": payload.get("knowledge_context", ""),
             "social_context": payload.get("social_context", ""),
+        }
+
+    def normalize_appraisal_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        appraisal = payload.get("appraisal", payload)
+        if not isinstance(appraisal, dict):
+            appraisal = {}
+        emotion = payload.get("emotion", {})
+        return {
+            "appraisal": appraisal,
+            "emotion": emotion if isinstance(emotion, dict) else {},
+        }
+
+    def normalize_emotion_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            payload = {}
+        return {
+            "primary": payload.get("primary", "neutral"),
+            "secondary": payload.get("secondary", []),
+            "intensity": payload.get("intensity", 0.0),
         }
 
     def normalize_strategy_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -448,11 +574,50 @@ class AgentTest:
         value = payload.get(key)
         return value if isinstance(value, bool) else default
 
+    def read_float(self, payload: dict[str, Any], key: str, default: float, minimum: float, maximum: float) -> float:
+        value = payload.get(key, default)
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            parsed = default
+        return max(minimum, min(maximum, parsed))
+
     def read_string_list(self, payload: dict[str, Any], key: str) -> list[str]:
         value = payload.get(key)
         if not isinstance(value, list):
             return []
         return [str(item).strip() for item in value if str(item).strip() != ""]
+
+    def prepare_vector_state(self, character: Character, prompt: StageTestPrompt) -> dict[str, Any]:
+        config_path_value = prompt.stage_inputs.get("vector_state_config")
+        if not isinstance(config_path_value, str) or config_path_value.strip() == "":
+            return {}
+
+        config_path = self.resolve_test_data_path(config_path_value)
+        config = load_vector_state_config(config_path)
+        result = extend_vector_state_from_config(character.db, config)
+        result["config_path"] = str(config_path)
+        return result
+
+    def save_vector_state_snapshot(self, character: Character, prompt: StageTestPrompt) -> dict[str, Any] | None:
+        snapshot_path_value = prompt.stage_inputs.get("snapshot_path")
+        config_path_value = prompt.stage_inputs.get("vector_state_config")
+        if not isinstance(snapshot_path_value, str) or snapshot_path_value.strip() == "":
+            return None
+        if not isinstance(config_path_value, str) or config_path_value.strip() == "":
+            return None
+
+        snapshot_path = self.resolve_test_data_path(snapshot_path_value)
+        config_path = self.resolve_test_data_path(config_path_value)
+        return save_vector_snapshot(character.db, snapshot_path, config_path)
+
+    def resolve_test_data_path(self, value: str) -> Path:
+        raw_path = Path(value)
+        if raw_path.is_absolute():
+            return raw_path
+
+        repo_root = Path(script_dir).parent
+        return repo_root / raw_path
 
     def evaluate_deterministic_checks(
         self,

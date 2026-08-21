@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from classes.Character import Character
 from logger import configure_logging
 from models import Faction, MetadataCategory
-from workflow.models import InitialContext, PerceptionResult, ResponseResult, RetrievedContext, StateUpdate, StrategyResult
+from workflow.models import AppraisalResult, EmotionResult, InitialContext, PerceptionResult, ResponseResult, RetrievedContext, StateUpdate, StrategyResult
 from workflow.stages.initial_context_stage import InitialContextStage
 from workflow.stages.terminal_update_stage import TerminalUpdateStage
 
@@ -152,10 +152,13 @@ class CharacterStatePersistenceTests(unittest.TestCase):
             sentiment_reasoning="The player is a promising customer.",
         )
         response = ResponseResult(reply="I can sell you herbs.", turn_prompt="prompt")
+        appraisal = AppraisalResult(relevance=0.8, valence=0.4, attribution_source="player", summary="Useful trade opportunity.")
+        emotion = EmotionResult(primary="interest", secondary=["optimism"], intensity=0.5)
 
-        result = stage.run(initial_context, perception, retrieved_context, strategy, response)
+        result = stage.run(initial_context, perception, retrieved_context, appraisal, emotion, strategy, response)
 
         self.assertIn("sentiment", result.sentiment_tags)
+        self.assertIn("interest", result.sentiment_tags)
         self.assertIn("buy_goods", result.relationship_update.tags)
         self.assertIn("knowledge_context", result.belief_update.tags)
         self.assertIn("goal", result.goal_update.tags)

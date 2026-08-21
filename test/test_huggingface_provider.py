@@ -51,6 +51,7 @@ class HuggingFaceProviderTests(unittest.TestCase):
         client.text_generation.assert_called_once_with(
             prompt="system: You are helpful.\n\nuser: hi",
             model="test-model",
+            max_new_tokens=500,
         )
         client.chat_completion.assert_not_called()
 
@@ -109,14 +110,26 @@ class HuggingFaceProviderTests(unittest.TestCase):
         self.assertEqual(provider.embed("hello"), [[0.1, 0.2, 0.3]])
 
     @patch("ai.providers.InferenceClient")
-    def test_text_generation_provider_uses_inference_client_api(self, inference_client_cls):
+    def test_text_generation_provider_uses_chat_completion_for_judge_prompt(self, inference_client_cls):
         client = MagicMock()
         inference_client_cls.return_value = client
-        client.text_generation.return_value = "generated"
+
+        message = MagicMock()
+        message.content = "generated"
+        choice = MagicMock()
+        choice.message = message
+        result = MagicMock()
+        result.choices = [choice]
+        client.chat_completion.return_value = result
 
         provider = HuggingFaceTextGenerationProvider(self.config)
 
         self.assertEqual(provider.generate("prompt"), "generated")
+        client.chat_completion.assert_called_once_with(
+            messages=[{"role": "user", "content": "prompt"}],
+            model="test-model",
+        )
+        client.text_generation.assert_not_called()
 
     @patch("ai.providers.InferenceClient")
     def test_hf_provider_is_optional(self, inference_client_cls):

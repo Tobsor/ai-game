@@ -8,6 +8,9 @@ from urllib import request
 import ollama
 
 from ai.settings import RoleProviderConfig
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 try:
     from huggingface_hub import InferenceClient
@@ -127,6 +130,13 @@ def _flatten_messages_to_prompt(messages: list[dict[str, Any]]) -> str:
         prompt_parts.append(f"{role}: {content}")
 
     return "\n\n".join(prompt_parts)
+
+
+def _decode_raw_response(raw_response: Any) -> str:
+    if isinstance(raw_response, bytes | bytearray | memoryview):
+        return bytes(raw_response).decode("utf-8", errors="replace")
+
+    return str(raw_response)
 
 
 def _coerce_embedding_payload(embedding: Any) -> list[float]:
@@ -273,11 +283,7 @@ class HuggingFaceChatProvider(HuggingFaceInferenceProviderBase):
     def chat(self, messages: list[dict[str, Any]], tools: list[Any] | None = None) -> ChatCompletionResult:
         if self.config.hf_provider == "featherless-ai":
             prompt = _flatten_messages_to_prompt(messages)
-            result = self.client.text_generation(
-                prompt=prompt,
-                model=self.config.model,
-                max_new_tokens=500
-            )
+            result = self._text_generation_with_raw_response_logging(prompt)
             content = result if isinstance(result, str) else str(result)
             return ChatCompletionResult(content=content, tool_calls=[])
 
@@ -297,6 +303,42 @@ class HuggingFaceChatProvider(HuggingFaceInferenceProviderBase):
             tool_calls=_normalize_tool_calls(_extract_message_tool_calls(normalized_message)),
         )
 
+    def _text_generation_with_raw_response_logging(self, prompt: str) -> Any:
+        try:
+            import huggingface_hub.inference._client as hf_client_module
+        except ImportError:
+            hf_client_module = None
+
+        original_bytes_to_dict = getattr(hf_client_module, "_bytes_to_dict", None) if hf_client_module else None
+        if not callable(original_bytes_to_dict):
+            return self.client.text_generation(
+                prompt=prompt,
+                model=self.config.model,
+                max_new_tokens=500,
+            )
+
+        def logging_bytes_to_dict(raw_response: Any) -> dict[str, Any]:
+            try:
+                return original_bytes_to_dict(raw_response)
+            except json.JSONDecodeError:
+                logger.error(
+                    "Hugging Face text_generation returned invalid JSON. provider=%s model=%s raw_response=%r",
+                    self.config.hf_provider,
+                    self.config.model,
+                    _decode_raw_response(raw_response),
+                )
+                raise
+
+        hf_client_module._bytes_to_dict = logging_bytes_to_dict
+        try:
+            return self.client.text_generation(
+                prompt=prompt,
+                model=self.config.model,
+                max_new_tokens=500,
+            )
+        finally:
+            hf_client_module._bytes_to_dict = original_bytes_to_dict
+
 
 class HuggingFaceEmbeddingProvider(HuggingFaceInferenceProviderBase):
     def embed(self, text: str) -> list[list[float]]:
@@ -309,12 +351,13 @@ class HuggingFaceEmbeddingProvider(HuggingFaceInferenceProviderBase):
 
 class HuggingFaceTextGenerationProvider(HuggingFaceInferenceProviderBase):
     def generate(self, prompt: str) -> str:
-        result = self.client.text_generation(
-            prompt=prompt,
+        result = self.client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
             model=self.config.model,
         )
+        message = getattr(getattr(result, "choices", [None])[0], "message", None)
 
-        return result if isinstance(result, str) else str(result)
+        return _extract_message_content(message)
 
 
 def _annotation_to_json_type(annotation: Any) -> str:

@@ -1,4 +1,5 @@
 from workflow.stages.base import LLMStage, Stage
+from workflow.stages.appraisal_stage import AppraisalStage
 from workflow.stages.gap_analysis_stage import GapAnalysisStage
 from workflow.stages.initial_context_stage import InitialContextStage
 from workflow.stages.perception_stage import PerceptionStage
@@ -10,6 +11,7 @@ from workflow.stages.terminal_update_stage import TerminalUpdateStage
 __all__ = [
     "LLMStage",
     "Stage",
+    "AppraisalStage",
     "GapAnalysisStage",
     "InitialContextStage",
     "PerceptionStage",

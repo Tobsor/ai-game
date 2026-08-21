@@ -1,5 +1,5 @@
 from logger import get_logger
-from workflow.models import InitialContext, PerceptionResult, RetrievedContext, StrategyResult
+from workflow.models import AppraisalResult, EmotionResult, InitialContext, PerceptionResult, RetrievedContext, StrategyResult
 from workflow.stages.base import LLMStage
 from workflow.stages.prompting import format_prompt
 
@@ -24,21 +24,57 @@ class StrategyStage(LLMStage):
         initial_context: InitialContext,
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
+        appraisal: AppraisalResult,
+        emotion: EmotionResult,
     ) -> str:
         return format_prompt(
-            "Choose the NPC's high-level response strategy based on the interpreted player input and the context retrieved so far.",
+            "Choose the NPC's high-level response strategy based on final perception, appraisal, emotional reaction, and context. Do not redo perception, appraisal, or emotion.",
             [
                 ("Player input", perception.raw_prompt),
+                (
+                    "Compact final perception",
+                    "\n".join([
+                        f"summary={perception.summary}",
+                        f"perceived_intent={', '.join(perception.perceived_intent)}",
+                        f"perceived_attitude={', '.join(perception.perceived_attitude)}",
+                        f"relevant_topics={', '.join(perception.relevant_topics)}",
+                        f"target={', '.join(perception.target)}",
+                        f"confidence={perception.confidence}",
+                    ]),
+                ),
+                (
+                    "Appraisal",
+                    "\n".join([
+                        f"relevance={appraisal.relevance}",
+                        f"valence={appraisal.valence}",
+                        f"goal_impact={appraisal.goal_impact}",
+                        f"social_self_impact={appraisal.social_self_impact}",
+                        f"threat={appraisal.threat}",
+                        f"control={appraisal.control}",
+                        f"attribution_source={appraisal.attribution_source}",
+                        f"attribution_responsibility={appraisal.attribution_responsibility}",
+                        f"summary={appraisal.summary}",
+                    ]),
+                ),
+                (
+                    "Emotional reaction",
+                    "\n".join([
+                        f"primary={emotion.primary}",
+                        f"secondary={', '.join(emotion.secondary)}",
+                        f"intensity={emotion.intensity}",
+                    ]),
+                ),
                 ("Character sentiment", initial_context.sentiment),
                 ("Relationship summary", initial_context.relationship_summary),
-                ("Active goals", "\n".join(initial_context.active_goals)),
+                ("Persistent goals and motivations", "\n".join(initial_context.active_goals)),
                 ("Recent conversation state", "\n".join(initial_context.recent_turns)),
                 ("Retrieved context", retrieved_context.combined_context),
                 (
                     "Strategy guidance",
                     "\n".join([
                         "Decide what interaction strategy this NPC chooses toward the player in this moment.",
-                        "Focus on what the NPC wants to achieve, how the NPC wants to treat or position toward the player, what tone or social approach fits, and what would feel natural for this specific character in this situation.",
+                        "Generate the immediate conversational goal for this turn; do not treat persistent goals as if they are already the conversational goal.",
+                        "Focus on what the NPC wants to achieve now, how the NPC wants to treat or position toward the player, what tone or social approach fits, and what would feel natural for this specific character in this situation.",
                         "Consider whether the NPC wants to cooperate, deflect, pressure, help, refuse, test, threaten, bargain, open up, or guide the conversation in another direction.",
                         "Keep the NPC's intention and strategy portrayal short and concise. Prefer brief labels or compact phrases over elaborate explanations.",
                         "The strategy is not limited to dialogue alone. If carrying out the strategy would naturally involve an immediate in-world action, the NPC may use the provided action tools.",
@@ -71,9 +107,11 @@ class StrategyStage(LLMStage):
         initial_context: InitialContext,
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
+        appraisal: AppraisalResult,
+        emotion: EmotionResult,
     ) -> StrategyResult:
         logger.verbose("Running strategy stage")
-        stage_prompt = self.get_prompt(initial_context, perception, retrieved_context)
+        stage_prompt = self.get_prompt(initial_context, perception, retrieved_context, appraisal, emotion)
         response = self.character.agent.run_prompt(
             prompt=stage_prompt,
             tools=[

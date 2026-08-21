@@ -1,6 +1,7 @@
 from logger import get_logger
 from workflow.models import TurnInput, TurnResult
 from workflow.stages import (
+    AppraisalStage,
     GapAnalysisStage,
     InitialContextStage,
     PerceptionStage,
@@ -20,6 +21,7 @@ class TurnPipeline:
         self.perception_stage = PerceptionStage(character)
         self.gap_analysis_stage = GapAnalysisStage(character)
         self.retrieval_stage = RetrievalStage(character)
+        self.appraisal_stage = AppraisalStage(character)
         self.strategy_stage = StrategyStage(character)
         self.response_stage = ResponseStage(character)
         self.terminal_update_stage = TerminalUpdateStage(character)
@@ -111,10 +113,20 @@ class TurnPipeline:
                     f"tool_calls={len(perception.tool_calls)}, raw_prompt_length={len(perception.raw_prompt)}",
                 )
 
-            stage_name = "StrategyStage"
-            stage_payload = {"prompt": perception.raw_prompt}
+            stage_name = "AppraisalStage"
+            stage_payload = perception
             self._log_stage_start(stage_name, stage_payload)
-            strategy = self.strategy_stage.run(initial_context, perception, retrieved_context)
+            appraisal, emotion = self.appraisal_stage.run(initial_context, perception, retrieved_context)
+            self._log_stage_completion(
+                stage_name,
+                {"appraisal": appraisal, "emotion": emotion},
+                f"appraisal_relevance={appraisal.relevance}, emotion={emotion.primary}:{emotion.intensity}",
+            )
+
+            stage_name = "StrategyStage"
+            stage_payload = {"prompt": perception.raw_prompt, "appraisal": appraisal, "emotion": emotion}
+            self._log_stage_start(stage_name, stage_payload)
+            strategy = self.strategy_stage.run(initial_context, perception, retrieved_context, appraisal, emotion)
             self._log_stage_completion(
                 stage_name,
                 strategy,
@@ -124,7 +136,7 @@ class TurnPipeline:
             stage_name = "ResponseStage"
             stage_payload = {"prompt": perception.raw_prompt}
             self._log_stage_start(stage_name, stage_payload)
-            response = self.response_stage.run(initial_context, perception, retrieved_context, strategy)
+            response = self.response_stage.run(initial_context, perception, retrieved_context, appraisal, emotion, strategy)
             self._log_stage_completion(
                 stage_name,
                 response,
@@ -138,6 +150,8 @@ class TurnPipeline:
                 initial_context,
                 perception,
                 retrieved_context,
+                appraisal,
+                emotion,
                 strategy,
                 response,
             )
@@ -156,6 +170,8 @@ class TurnPipeline:
                     "store_memory": terminal_update.store_memory,
                 },
                 result={
+                    "appraisal": appraisal,
+                    "emotion": emotion,
                     "response": response,
                     "terminal_update": terminal_update,
                 },
@@ -171,6 +187,8 @@ class TurnPipeline:
             perception=perception,
             gap_analysis=gap_analysis,
             retrieved_context=retrieved_context,
+            appraisal=appraisal,
+            emotion=emotion,
             strategy=strategy,
             response=response,
             terminal_update=terminal_update,

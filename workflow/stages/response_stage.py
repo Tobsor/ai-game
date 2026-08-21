@@ -1,5 +1,5 @@
 from logger import get_logger
-from workflow.models import InitialContext, PerceptionResult, ResponseResult, RetrievedContext, StrategyResult
+from workflow.models import AppraisalResult, EmotionResult, InitialContext, PerceptionResult, ResponseResult, RetrievedContext, StrategyResult
 from workflow.stages.base import LLMStage
 from workflow.stages.prompting import format_prompt
 
@@ -12,12 +12,24 @@ class ResponseStage(LLMStage):
         initial_context: InitialContext,
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
+        appraisal: AppraisalResult,
+        emotion: EmotionResult,
         strategy: StrategyResult,
     ) -> str:
         return format_prompt(
-            "Respond to the current turn using the latest player input, retrieved context, and response strategy.",
+            "Respond to the current turn by realizing the selected strategy in character. Do not redo perception, appraisal, emotion, or the conversational goal.",
             [
                 ("Player input", perception.raw_prompt),
+                ("Final perception summary", perception.summary),
+                ("Appraisal summary", appraisal.summary),
+                (
+                    "Emotional tone",
+                    "\n".join([
+                        f"primary={emotion.primary}",
+                        f"secondary={', '.join(emotion.secondary)}",
+                        f"intensity={emotion.intensity}",
+                    ]),
+                ),
                 ("Recent conversation state", "\n".join(initial_context.recent_turns)),
                 ("Retrieved context", retrieved_context.combined_context),
                 (
@@ -38,6 +50,7 @@ class ResponseStage(LLMStage):
                     "\n".join([
                         "Mention nonverbal content only from the first-person perspective.",
                         "Do not reveal internal thoughts directly.",
+                        "Use the emotional tone only where it helps the selected strategy feel natural.",
                         "Reply to the player while staying fully in character.",
                         f"Respond to the following user input: {perception.raw_prompt}",
                     ]),
@@ -50,18 +63,22 @@ class ResponseStage(LLMStage):
         initial_context: InitialContext,
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
+        appraisal: AppraisalResult,
+        emotion: EmotionResult,
         strategy: StrategyResult,
     ) -> str:
-        return self.get_turn_prompt(initial_context, perception, retrieved_context, strategy)
+        return self.get_turn_prompt(initial_context, perception, retrieved_context, appraisal, emotion, strategy)
 
     def run(
         self,
         initial_context: InitialContext,
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
+        appraisal: AppraisalResult,
+        emotion: EmotionResult,
         strategy: StrategyResult,
     ) -> ResponseResult:
-        turn_prompt = self.get_turn_prompt(initial_context, perception, retrieved_context, strategy)
+        turn_prompt = self.get_turn_prompt(initial_context, perception, retrieved_context, appraisal, emotion, strategy)
 
         logger.verbose("Response stage assembled turn prompt")
         logger.debug("Turn prompt: %s", turn_prompt)

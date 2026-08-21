@@ -35,6 +35,9 @@ class PerceptionStage(LLMStage):
                     "Decision rubric",
                     "\n".join([
                         "Analyze the player's message and infer player_intent as a concise description of what the player is trying to achieve, or unknown if it cannot be determined.",
+                        "Summarize what the NPC subjectively believes is happening in summary.",
+                        "Represent perceived_intent, perceived_attitude, relevant_topics, and target as compact arrays of labels.",
+                        "Set confidence from 0.0 to 1.0 based on how strongly the NPC can support this interpretation from the available stimulus and context.",
                         "Analyze the player's message and infer player_emotion, defaulting to neutral when no strong emotional signal is present.",
                         "Classify request_type with a concise category such as general, question, demand, negotiation, threat, social bid, or similar.",
                         "Summarize the main subject of the player's message in topic.",
@@ -42,7 +45,7 @@ class PerceptionStage(LLMStage):
                         "Set threat_signal to none unless the player expresses hostility, danger, intimidation, coercion, or violent intent.",
                         "Set manipulation_signal to none unless the player appears deceptive, coercive, flattering strategically, guilt-inducing, or otherwise manipulative.",
                         "Set topic_sensitivity to normal unless the topic is sensitive, secret, risky, personal, or delicate for this NPC.",
-                        "Return strictly valid JSON with exactly these fields: player_intent, player_emotion, request_type, topic, is_ambiguous, threat_signal, manipulation_signal, topic_sensitivity.",
+                        "Return strictly valid JSON with exactly these fields: summary, perceived_intent, perceived_attitude, relevant_topics, target, confidence, player_intent, player_emotion, request_type, topic, is_ambiguous, threat_signal, manipulation_signal, topic_sensitivity.",
                         'Do not return markdown, prose, explanations, or code fences. Output only the JSON object.',
                     ]),
                 ),
@@ -77,6 +80,12 @@ class PerceptionStage(LLMStage):
         return PerceptionResult(
             raw_prompt=turn_input.prompt,
             stage_prompt=stage_prompt,
+            summary=self.detect_summary(parsed_response),
+            perceived_intent=self.detect_string_list(parsed_response, "perceived_intent"),
+            perceived_attitude=self.detect_string_list(parsed_response, "perceived_attitude"),
+            relevant_topics=self.detect_string_list(parsed_response, "relevant_topics"),
+            target=self.detect_string_list(parsed_response, "target"),
+            confidence=self.detect_float(parsed_response, "confidence", 0.0, 0.0, 1.0),
             player_intent=self.detect_player_intent(parsed_response),
             player_emotion=self.detect_player_emotion(parsed_response),
             request_type=self.detect_request_type(parsed_response),
@@ -88,6 +97,30 @@ class PerceptionStage(LLMStage):
             tool_calls=[],
             retrieval_reasoning="",
         )
+
+    def detect_summary(self, parsed_response: dict) -> str:
+        value = parsed_response.get("summary")
+        if isinstance(value, str) and value.strip() != "":
+            return value.strip()
+        intent = self.detect_player_intent(parsed_response)
+        topic = self.detect_topic(parsed_response)
+        if topic != "":
+            return f"{intent} about {topic}"
+        return intent
+
+    def detect_string_list(self, parsed_response: dict, key: str) -> list[str]:
+        value = parsed_response.get(key)
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip() != ""]
+
+    def detect_float(self, parsed_response: dict, key: str, default: float, minimum: float, maximum: float) -> float:
+        value = parsed_response.get(key, default)
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            parsed = default
+        return max(minimum, min(maximum, parsed))
 
     def detect_player_intent(self, parsed_response: dict) -> str:
         value = parsed_response.get("player_intent")

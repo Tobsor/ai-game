@@ -33,6 +33,7 @@ class FakeAgent:
         gap_content: str | None = None,
         gap_tool_calls=None,
         perception_content: str | None = None,
+        appraisal_content: str | None = None,
         retrieval_summary_content: str | None = None,
         recent_turn_summary_content: str | None = None,
     ):
@@ -40,6 +41,7 @@ class FakeAgent:
         self.gap_content = gap_content
         self.gap_tool_calls = gap_tool_calls or []
         self.perception_content = perception_content
+        self.appraisal_content = appraisal_content
         self.retrieval_summary_content = retrieval_summary_content or "summarized retrieved lore"
         self.recent_turn_summary_content = recent_turn_summary_content or "\n".join([
             "Topic: recent trade discussion",
@@ -69,6 +71,11 @@ class FakeAgent:
         elif stage_name == "StrategyStage":
             content = self.strategy_content if self.strategy_content is not None else ""
             tool_calls = list(self.strategy_tool_calls)
+        elif stage_name == "AppraisalStage":
+            content = self.appraisal_content
+            if content is None:
+                content = self.default_appraisal_content()
+            tool_calls = []
         else:
             content = self.perception_content
             if content is None:
@@ -97,6 +104,12 @@ class FakeAgent:
 
     def default_perception_content(self) -> str:
         return json.dumps({
+            "summary": "The player is greeting the NPC.",
+            "perceived_intent": ["greet"],
+            "perceived_attitude": ["neutral"],
+            "relevant_topics": [],
+            "target": ["self"],
+            "confidence": 0.8,
             "player_intent": "unknown",
             "player_emotion": "neutral",
             "request_type": "general",
@@ -105,6 +118,28 @@ class FakeAgent:
             "threat_signal": "none",
             "manipulation_signal": "none",
             "topic_sensitivity": "normal",
+        })
+
+    def default_appraisal_content(self) -> str:
+        return json.dumps({
+            "appraisal": {
+                "relevance": 0.0,
+                "valence": 0.0,
+                "goal_impact": 0.0,
+                "social_self_impact": 0.0,
+                "threat": 0.0,
+                "control": 0.5,
+                "attribution": {
+                    "source": "player",
+                    "responsibility": 0.0,
+                },
+                "summary": "The message has no strong personal meaning.",
+            },
+            "emotion": {
+                "primary": "neutral",
+                "secondary": [],
+                "intensity": 0.0,
+            },
         })
 
 
@@ -165,6 +200,7 @@ class FakeCharacter:
         gap_content: str | None = None,
         gap_tool_calls=None,
         perception_content: str | None = None,
+        appraisal_content: str | None = None,
         retrieval_summary_content: str | None = None,
         recent_turn_summary_content: str | None = None,
     ):
@@ -178,6 +214,7 @@ class FakeCharacter:
             gap_content=gap_content,
             gap_tool_calls=gap_tool_calls,
             perception_content=perception_content,
+            appraisal_content=appraisal_content,
             retrieval_summary_content=retrieval_summary_content,
             recent_turn_summary_content=recent_turn_summary_content,
         )
@@ -231,6 +268,8 @@ class TurnPipelineTests(unittest.TestCase):
         self.assertEqual(result.perception.raw_prompt, "Hello there")
         self.assertEqual(result.strategy.conversation_goal, "answer_plainly")
         self.assertEqual(result.strategy.immediate_actions, ["keep_talking"])
+        self.assertEqual(result.appraisal.summary, "The message has no strong personal meaning.")
+        self.assertEqual(result.emotion.primary, "neutral")
         self.assertFalse(result.terminal_update.store_memory)
 
     def test_pipeline_performs_at_most_one_retrieval_pass(self):
@@ -246,7 +285,7 @@ class TurnPipelineTests(unittest.TestCase):
 
         pipeline.run(TurnInput(prompt="Do you remember me?"))
         self.assertEqual(character.db.stage_query_calls.get("RetrievalStage.run"), 2)
-        self.assertEqual(len(character.agent.prompts), 5)
+        self.assertEqual(len(character.agent.prompts), 6)
 
     def test_original_prompt_flows_into_response(self):
         character = FakeCharacter()
@@ -273,6 +312,7 @@ class TurnPipelineTests(unittest.TestCase):
         self.assertIsInstance(pipeline.perception_stage, LLMStage)
         self.assertIsInstance(pipeline.gap_analysis_stage, LLMStage)
         self.assertIsInstance(pipeline.retrieval_stage, LLMStage)
+        self.assertIsInstance(pipeline.appraisal_stage, LLMStage)
         self.assertIsInstance(pipeline.strategy_stage, LLMStage)
         self.assertIsInstance(pipeline.response_stage, LLMStage)
         self.assertIsInstance(pipeline.terminal_update_stage, LLMStage)
@@ -280,6 +320,7 @@ class TurnPipelineTests(unittest.TestCase):
         self.assertTrue(callable(pipeline.perception_stage.get_prompt))
         self.assertTrue(callable(pipeline.gap_analysis_stage.get_prompt))
         self.assertTrue(callable(pipeline.retrieval_stage.get_prompt))
+        self.assertTrue(callable(pipeline.appraisal_stage.get_prompt))
         self.assertTrue(callable(pipeline.strategy_stage.get_prompt))
         self.assertTrue(callable(pipeline.response_stage.get_prompt))
         self.assertTrue(callable(pipeline.terminal_update_stage.get_prompt))
@@ -290,7 +331,7 @@ class TurnPipelineTests(unittest.TestCase):
 
         result = pipeline.run(TurnInput(prompt="Do you know this town?"))
 
-        self.assertEqual(len(character.agent.prompts), 3)
+        self.assertEqual(len(character.agent.prompts), 4)
         self.assertEqual(character.agent.prompts[0], result.perception.stage_prompt)
         self.assertIn("Do you know this town?", result.perception.stage_prompt)
         self.assertIn("Character definition", result.perception.stage_prompt)
@@ -300,6 +341,12 @@ class TurnPipelineTests(unittest.TestCase):
     def test_perception_stage_parses_strict_json_into_result(self):
         character = FakeCharacter(
             perception_content=json.dumps({
+                "summary": "The player wants local history and seems curious.",
+                "perceived_intent": ["seek_information"],
+                "perceived_attitude": ["curious"],
+                "relevant_topics": ["local history"],
+                "target": ["town"],
+                "confidence": 0.92,
                 "player_intent": "seek_information",
                 "player_emotion": "curious",
                 "request_type": "question",
@@ -315,6 +362,12 @@ class TurnPipelineTests(unittest.TestCase):
         result = pipeline.run(TurnInput(prompt="Tell me about this town's history."))
 
         self.assertEqual(result.perception.player_intent, "seek_information")
+        self.assertEqual(result.perception.summary, "The player wants local history and seems curious.")
+        self.assertEqual(result.perception.perceived_intent, ["seek_information"])
+        self.assertEqual(result.perception.perceived_attitude, ["curious"])
+        self.assertEqual(result.perception.relevant_topics, ["local history"])
+        self.assertEqual(result.perception.target, ["town"])
+        self.assertEqual(result.perception.confidence, 0.92)
         self.assertEqual(result.perception.player_emotion, "curious")
         self.assertEqual(result.perception.request_type, "question")
         self.assertEqual(result.perception.topic, "local history")
@@ -323,6 +376,65 @@ class TurnPipelineTests(unittest.TestCase):
         self.assertEqual(result.perception.manipulation_signal, "subtle_flattery")
         self.assertEqual(result.perception.topic_sensitivity, "normal")
         self.assertEqual(result.perception.tool_calls, [])
+
+    def test_appraisal_stage_parses_valid_json_and_clamps_ranges(self):
+        character = FakeCharacter(
+            appraisal_content=json.dumps({
+                "appraisal": {
+                    "relevance": 1.7,
+                    "valence": -1.4,
+                    "goal_impact": 0.4,
+                    "social_self_impact": -0.8,
+                    "threat": -0.2,
+                    "control": 1.2,
+                    "attribution": {
+                        "source": "player",
+                        "responsibility": 2.0,
+                    },
+                    "summary": "The message wounds Mira's pride but is not dangerous.",
+                },
+                "emotion": {
+                    "primary": "anger",
+                    "secondary": ["wounded_pride", "irritation"],
+                    "intensity": 1.3,
+                },
+            })
+        )
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="You always fail at this."))
+
+        self.assertEqual(result.appraisal.relevance, 1.0)
+        self.assertEqual(result.appraisal.valence, -1.0)
+        self.assertEqual(result.appraisal.goal_impact, 0.4)
+        self.assertEqual(result.appraisal.social_self_impact, -0.8)
+        self.assertEqual(result.appraisal.threat, 0.0)
+        self.assertEqual(result.appraisal.control, 1.0)
+        self.assertEqual(result.appraisal.attribution_source, "player")
+        self.assertEqual(result.appraisal.attribution_responsibility, 1.0)
+        self.assertEqual(result.appraisal.summary, "The message wounds Mira's pride but is not dangerous.")
+        self.assertEqual(result.emotion.primary, "anger")
+        self.assertEqual(result.emotion.secondary, ["wounded_pride", "irritation"])
+        self.assertEqual(result.emotion.intensity, 1.0)
+
+    def test_appraisal_stage_falls_back_to_neutral_defaults_for_invalid_json(self):
+        character = FakeCharacter(appraisal_content="not json")
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="Hello there"))
+
+        self.assertEqual(result.appraisal.relevance, 0.0)
+        self.assertEqual(result.appraisal.valence, 0.0)
+        self.assertEqual(result.appraisal.goal_impact, 0.0)
+        self.assertEqual(result.appraisal.social_self_impact, 0.0)
+        self.assertEqual(result.appraisal.threat, 0.0)
+        self.assertEqual(result.appraisal.control, 0.5)
+        self.assertEqual(result.appraisal.attribution_source, "unknown")
+        self.assertEqual(result.appraisal.attribution_responsibility, 0.0)
+        self.assertEqual(result.appraisal.summary, "")
+        self.assertEqual(result.emotion.primary, "neutral")
+        self.assertEqual(result.emotion.secondary, [])
+        self.assertEqual(result.emotion.intensity, 0.0)
 
     def test_initial_context_uses_raw_recent_excerpt_for_short_history(self):
         character = FakeCharacter()
@@ -372,8 +484,8 @@ class TurnPipelineTests(unittest.TestCase):
 
         self.assertIn("Recent conversation state", result.perception.stage_prompt)
         self.assertIn("Recent conversation excerpt:", result.perception.stage_prompt)
-        self.assertIn("Recent conversation state", character.agent.prompts[2])
-        self.assertIn("Recent conversation excerpt:", character.agent.prompts[2])
+        self.assertIn("Recent conversation state", character.agent.prompts[3])
+        self.assertIn("Recent conversation excerpt:", character.agent.prompts[3])
         self.assertIn("Recent conversation state", result.response.turn_prompt)
         self.assertIn("Recent conversation excerpt:", result.response.turn_prompt)
 
@@ -389,7 +501,7 @@ class TurnPipelineTests(unittest.TestCase):
 
         self.assertEqual(result.strategy.immediate_actions, ["open_trade", "keep_talking"])
         self.assertEqual(result.terminal_update.external_actions, ["open_trade", "keep_talking"])
-        self.assertIn("The strategy is not limited to dialogue alone. If carrying out the strategy would naturally involve an immediate in-world action, the NPC may use the provided action tools.", character.agent.prompts[2])
+        self.assertIn("The strategy is not limited to dialogue alone. If carrying out the strategy would naturally involve an immediate in-world action, the NPC may use the provided action tools.", character.agent.prompts[3])
 
     def test_strategy_stage_uses_llm_json_for_strategy_fields(self):
         character = FakeCharacter()
@@ -417,6 +529,38 @@ class TurnPipelineTests(unittest.TestCase):
         self.assertEqual(result.strategy.conversation_move, "answer_then_probe")
         self.assertEqual(result.strategy.immediate_actions, ["keep_talking"])
 
+    def test_strategy_stage_uses_appraisal_emotion_and_generates_conversation_goal(self):
+        character = FakeCharacter(
+            appraisal_content=json.dumps({
+                "appraisal": {
+                    "relevance": 0.9,
+                    "valence": -0.7,
+                    "goal_impact": -0.2,
+                    "social_self_impact": -0.9,
+                    "threat": 0.1,
+                    "control": 0.8,
+                    "attribution": {"source": "player", "responsibility": 0.9},
+                    "summary": "The player is insulting Mira's competence.",
+                },
+                "emotion": {
+                    "primary": "anger",
+                    "secondary": ["wounded_pride"],
+                    "intensity": 0.78,
+                },
+            })
+        )
+        pipeline = TurnPipeline(character)
+
+        pipeline.run(TurnInput(prompt="I expected you to fail."))
+        strategy_prompt = character.agent.prompts[3]
+
+        self.assertIn("Appraisal", strategy_prompt)
+        self.assertIn("The player is insulting Mira's competence.", strategy_prompt)
+        self.assertIn("Emotional reaction", strategy_prompt)
+        self.assertIn("primary=anger", strategy_prompt)
+        self.assertIn("Persistent goals and motivations", strategy_prompt)
+        self.assertIn("Generate the immediate conversational goal for this turn", strategy_prompt)
+
     def test_strategy_stage_can_end_conversation_via_tool(self):
         character = FakeCharacter()
         character.agent.strategy_tool_calls = [
@@ -429,6 +573,28 @@ class TurnPipelineTests(unittest.TestCase):
 
         self.assertEqual(result.strategy.immediate_actions, ["alert_guards", "end_conversation"])
         self.assertEqual(result.terminal_update.external_actions, ["alert_guards", "end_conversation"])
+
+    def test_response_prompt_uses_emotional_tone_without_redeciding_upstream_stages(self):
+        character = FakeCharacter(
+            appraisal_content=json.dumps({
+                "appraisal": {
+                    "summary": "The player is making a friendly request.",
+                },
+                "emotion": {
+                    "primary": "warmth",
+                    "secondary": ["interest"],
+                    "intensity": 0.5,
+                },
+            })
+        )
+        pipeline = TurnPipeline(character)
+
+        result = pipeline.run(TurnInput(prompt="Could you help me choose supplies?"))
+
+        self.assertIn("Emotional tone", result.response.turn_prompt)
+        self.assertIn("primary=warmth", result.response.turn_prompt)
+        self.assertIn("Do not redo perception, appraisal, emotion, or the conversational goal.", result.response.turn_prompt)
+        self.assertIn("Response strategy", result.response.turn_prompt)
 
     def test_gap_analysis_stage_requests_strict_json(self):
         character = FakeCharacter(
@@ -474,7 +640,7 @@ class TurnPipelineTests(unittest.TestCase):
 
         result = pipeline.run(TurnInput(prompt="What happened here before?"))
 
-        self.assertEqual(len(character.agent.prompts), 5)
+        self.assertEqual(len(character.agent.prompts), 6)
         self.assertIn("Additional retrieved context", result.perception.stage_prompt)
         self.assertIn("summarized retrieved lore", result.perception.stage_prompt)
 
@@ -524,6 +690,8 @@ class TurnPipelineTests(unittest.TestCase):
             "GapAnalysisStage completed successfully",
             "RetrievalStage.run started",
             "RetrievalStage.run completed successfully",
+            "AppraisalStage started",
+            "AppraisalStage completed successfully",
             "StrategyStage started",
             "StrategyStage completed successfully",
             "ResponseStage started",
@@ -564,6 +732,7 @@ class TurnPipelineTests(unittest.TestCase):
             self.assertIn("=== Stage: InitialContextStage ===", content)
             self.assertIn("=== Stage: PerceptionStage ===", content)
             self.assertIn("=== Stage: RetrievalStage.run ===", content)
+            self.assertIn("=== Stage: AppraisalStage ===", content)
             self.assertIn("=== Stage: ResponseStage ===", content)
             self.assertIn("=== Stage: TerminalUpdateStage ===", content)
             self.assertIn("=== Stage: TurnPipeline ===", content)
