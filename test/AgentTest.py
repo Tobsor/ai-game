@@ -72,7 +72,9 @@ class AgentTest:
                 args_pass= 1 if prompt.expected_args.generate_npc_intention.is_invoked == False else 0
             )
         
-        intention_matches = generate_npc_intention_tool.function.arguments.get("intention") in prompt.expected_args.generate_npc_intention.args
+        expected_tactics = prompt.expected_args.generate_npc_intention.args
+        actual_tactics = generate_npc_intention_tool.function.arguments.get("tactics")
+        tactic_matches = self.compare_tactics(actual_tactics, expected_tactics)
 
         return AgentJudgeResult(
             tool="generate_npc_intention",
@@ -82,7 +84,7 @@ class AgentTest:
             user_prompt=prompt.user_query,
             raw_response=prompt.npc_response,
             invoked_pass=prompt.expected_args.generate_npc_intention.is_invoked == True,
-            args_pass=intention_matches
+            args_pass=tactic_matches
         )
     
     def evaluate_immediate_action(self, prompt: AgentTestPrompt) -> AgentJudgeResult:
@@ -128,7 +130,21 @@ class AgentTest:
                 args_pass= 1 if prompt.expected_args.change_sentiment.is_invoked == False else 0
             )
         
-        sentiment_matches = change_sentiment_tool.function.arguments.get("new_sentiment") in prompt.expected_args.change_sentiment.args
+        expected_sentiment, expected_posture = self.get_expected_sentiment_args(
+            prompt.expected_args.change_sentiment.args
+        )
+        sentiment_matches = self.value_matches(
+            change_sentiment_tool.function.arguments.get("immediate_sentiment"),
+            expected_sentiment
+        )
+        posture_matches = self.value_matches(
+            change_sentiment_tool.function.arguments.get("posture"),
+            expected_posture
+        )
+        if expected_posture is not None:
+            args_match = sentiment_matches and posture_matches
+        else:
+            args_match = sentiment_matches
 
         return AgentJudgeResult(
             tool="change_sentiment",
@@ -138,7 +154,7 @@ class AgentTest:
             user_prompt=prompt.user_query,
             raw_response=prompt.npc_response,
             invoked_pass=prompt.expected_args.change_sentiment.is_invoked == True,
-            args_pass=sentiment_matches if prompt.expected_args.change_sentiment.is_invoked == True else True
+            args_pass=args_match if prompt.expected_args.change_sentiment.is_invoked == True else True
         )
 
     def evaluate(self, prompt: AgentTestPrompt) -> list[AgentJudgeResult]:
@@ -148,6 +164,79 @@ class AgentTest:
         change_sentiment_res = self.evaluate_change_sentiment(prompt)
 
         return list([cognitive_action_res, generate_npc_intention_res, immediate_action_res, change_sentiment_res])
+
+    def compare_tactics(self, actual_tactics: Any, expected_tactics: Any, weight_tolerance: float = 0.1) -> float:
+        actual_map = self.normalize_tactics(actual_tactics)
+        expected_map = self.normalize_tactics(expected_tactics)
+
+        if not expected_map:
+            return 0
+
+        matches = 0
+        for label, expected_weight in expected_map.items():
+            actual_weight = actual_map.get(label)
+            if actual_weight is None:
+                continue
+            if abs(actual_weight - expected_weight) <= weight_tolerance:
+                matches += 1
+
+        return matches / len(expected_map)
+
+    def normalize_tactics(self, tactics: Any) -> dict[str, float]:
+        if tactics is None:
+            return {}
+
+        if isinstance(tactics, dict):
+            normalized: dict[str, float] = {}
+            for label, weight in tactics.items():
+                try:
+                    normalized[str(label)] = float(weight)
+                except (TypeError, ValueError):
+                    continue
+            return normalized
+
+        if isinstance(tactics, list):
+            normalized = {}
+            for item in tactics:
+                label = None
+                weight = None
+                if isinstance(item, dict):
+                    label = item.get("label")
+                    weight = item.get("weight")
+                elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                    label, weight = item[0], item[1]
+
+                if label is None or weight is None:
+                    continue
+
+                try:
+                    normalized[str(label)] = float(weight)
+                except (TypeError, ValueError):
+                    continue
+            return normalized
+
+        return {}
+
+    def get_expected_sentiment_args(self, expected_args: Any) -> tuple[Any | None, Any | None]:
+        if isinstance(expected_args, dict):
+            return (
+                expected_args.get("immediate_sentiment"),
+                expected_args.get("posture")
+            )
+
+        if isinstance(expected_args, (list, tuple)):
+            expected_sentiment = expected_args[0] if len(expected_args) > 0 else None
+            expected_posture = expected_args[1] if len(expected_args) > 1 else None
+            return (expected_sentiment, expected_posture)
+
+        return (expected_args, None)
+
+    def value_matches(self, actual: Any, expected: Any) -> bool:
+        if expected is None:
+            return False
+        if isinstance(expected, (list, tuple, set)):
+            return actual in expected
+        return actual == expected
 
     def evaluate_prompts(self, character: Character, prompts: list[AgentTestPrompt], tools: list[Callable]) -> None:
         all_results: list[AgentJudgeResult] = []
