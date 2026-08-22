@@ -21,23 +21,31 @@ class InitialContext:
 
 
 @dataclass
+class NPCPerception:
+    perceived_intent: list[str] = field(default_factory=list)
+    perceived_attitude: list[str] = field(default_factory=list)
+    player_intent: str = "unknown"
+    player_emotion: str = "neutral"
+    threat_signal: str = "none"
+    manipulation_signal: str = "none"
+    topic_sensitivity: str = "normal"
+
+
+@dataclass
+class PerceptionTopic:
+    primary: str = ""
+    related: list[str] = field(default_factory=list)
+    retrieval_queries: list[str] = field(default_factory=list)
+
+
+@dataclass
 class PerceptionResult:
     raw_prompt: str
     stage_prompt: str = ""
     summary: str = ""
-    perceived_intent: list[str] = field(default_factory=list)
-    perceived_attitude: list[str] = field(default_factory=list)
-    relevant_topics: list[str] = field(default_factory=list)
-    target: list[str] = field(default_factory=list)
-    confidence: float = 0.0
-    player_intent: str = "unknown"
-    player_emotion: str = "neutral"
+    npc_perception: NPCPerception = field(default_factory=NPCPerception)
+    topic: PerceptionTopic = field(default_factory=PerceptionTopic)
     request_type: str = "general"
-    topic: str = ""
-    is_ambiguous: bool = False
-    threat_signal: str = "none"
-    manipulation_signal: str = "none"
-    topic_sensitivity: str = "normal"
     tool_calls: list[Any] = field(default_factory=list)
     retrieval_reasoning: str = ""
 

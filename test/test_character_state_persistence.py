@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from classes.Character import Character
 from logger import configure_logging
 from models import Faction, MetadataCategory
-from workflow.models import AppraisalResult, EmotionResult, InitialContext, PerceptionResult, ResponseResult, RetrievedContext, StateUpdate, StrategyResult
+from workflow.models import AppraisalResult, EmotionResult, InitialContext, NPCPerception, PerceptionResult, PerceptionTopic, ResponseResult, RetrievedContext, StateUpdate, StrategyResult
 from workflow.stages.initial_context_stage import InitialContextStage
 from workflow.stages.terminal_update_stage import TerminalUpdateStage
 
@@ -138,10 +138,12 @@ class CharacterStatePersistenceTests(unittest.TestCase):
         )
         perception = PerceptionResult(
             raw_prompt="Can I buy herbs from you?",
-            player_intent="buy_goods",
-            player_emotion="curious",
+            npc_perception=NPCPerception(
+                player_intent="buy_goods",
+                player_emotion="curious",
+            ),
             request_type="question",
-            topic="herbs",
+            topic=PerceptionTopic(primary="herbs"),
         )
         retrieved_context = RetrievedContext(knowledge_context="Mira sells herbs and travel supplies.")
         strategy = StrategyResult(

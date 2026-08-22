@@ -105,19 +105,17 @@ class FakeAgent:
     def default_perception_content(self) -> str:
         return json.dumps({
             "summary": "The player is greeting the NPC.",
-            "perceived_intent": ["greet"],
-            "perceived_attitude": ["neutral"],
-            "relevant_topics": [],
-            "target": ["self"],
-            "confidence": 0.8,
-            "player_intent": "unknown",
-            "player_emotion": "neutral",
+            "npc_perception": {
+                "perceived_intent": ["greet"],
+                "perceived_attitude": ["neutral"],
+                "player_intent": "unknown",
+                "player_emotion": "neutral",
+                "threat_signal": "none",
+                "manipulation_signal": "none",
+                "topic_sensitivity": "normal",
+            },
             "request_type": "general",
-            "topic": "",
-            "is_ambiguous": False,
-            "threat_signal": "none",
-            "manipulation_signal": "none",
-            "topic_sensitivity": "normal",
+            "topic": {"primary": "", "related": [], "retrieval_queries": []},
         })
 
     def default_appraisal_content(self) -> str:
@@ -342,39 +340,39 @@ class TurnPipelineTests(unittest.TestCase):
         character = FakeCharacter(
             perception_content=json.dumps({
                 "summary": "The player wants local history and seems curious.",
-                "perceived_intent": ["seek_information"],
-                "perceived_attitude": ["curious"],
-                "relevant_topics": ["local history"],
-                "target": ["town"],
-                "confidence": 0.92,
-                "player_intent": "seek_information",
-                "player_emotion": "curious",
+                "npc_perception": {
+                    "perceived_intent": ["seek_information"],
+                    "perceived_attitude": ["curious"],
+                    "player_intent": "seek_information",
+                    "player_emotion": "curious",
+                    "threat_signal": "none",
+                    "manipulation_signal": "subtle_flattery",
+                    "topic_sensitivity": "normal",
+                },
                 "request_type": "question",
-                "topic": "local history",
-                "is_ambiguous": False,
-                "threat_signal": "none",
-                "manipulation_signal": "subtle_flattery",
-                "topic_sensitivity": "normal",
+                "topic": {
+                    "primary": "local history",
+                    "related": ["local history"],
+                    "retrieval_queries": ["town history", "local history"],
+                },
             })
         )
         pipeline = TurnPipeline(character)
 
         result = pipeline.run(TurnInput(prompt="Tell me about this town's history."))
 
-        self.assertEqual(result.perception.player_intent, "seek_information")
+        self.assertEqual(result.perception.npc_perception.player_intent, "seek_information")
         self.assertEqual(result.perception.summary, "The player wants local history and seems curious.")
-        self.assertEqual(result.perception.perceived_intent, ["seek_information"])
-        self.assertEqual(result.perception.perceived_attitude, ["curious"])
-        self.assertEqual(result.perception.relevant_topics, ["local history"])
-        self.assertEqual(result.perception.target, ["town"])
-        self.assertEqual(result.perception.confidence, 0.92)
-        self.assertEqual(result.perception.player_emotion, "curious")
+        self.assertEqual(result.perception.npc_perception.perceived_intent, ["seek_information"])
+        self.assertEqual(result.perception.npc_perception.perceived_attitude, ["curious"])
+        self.assertEqual(result.perception.npc_perception.player_emotion, "curious")
         self.assertEqual(result.perception.request_type, "question")
-        self.assertEqual(result.perception.topic, "local history")
-        self.assertFalse(result.perception.is_ambiguous)
-        self.assertEqual(result.perception.threat_signal, "none")
-        self.assertEqual(result.perception.manipulation_signal, "subtle_flattery")
-        self.assertEqual(result.perception.topic_sensitivity, "normal")
+        self.assertEqual(result.perception.topic.primary, "local history")
+        self.assertEqual(result.perception.topic.related, ["local history"])
+        self.assertEqual(result.perception.topic.retrieval_queries, ["town history", "local history"])
+        self.assertEqual(result.perception.npc_perception.threat_signal, "none")
+        self.assertEqual(result.perception.npc_perception.manipulation_signal, "subtle_flattery")
+        self.assertEqual(result.perception.npc_perception.topic_sensitivity, "normal")
         self.assertEqual(result.perception.tool_calls, [])
 
     def test_appraisal_stage_parses_valid_json_and_clamps_ranges(self):

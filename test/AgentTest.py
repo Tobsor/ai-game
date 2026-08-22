@@ -25,7 +25,7 @@ from models import (
     StageName,
     StageTestPrompt,
 )
-from workflow.models import AppraisalResult, EmotionResult, GapAnalysisResult, PerceptionResult, RetrievedContext, StrategyResult, TurnInput
+from workflow.models import AppraisalResult, EmotionResult, GapAnalysisResult, NPCPerception, PerceptionResult, PerceptionTopic, RetrievedContext, StrategyResult, TurnInput
 from test.stage_test_utils import (
     extend_vector_state_from_config,
     load_vector_state_config,
@@ -51,11 +51,14 @@ class AgentTest:
 
     STAGE_METRIC_GUIDANCE: dict[StageName, dict[str, str]] = {
         StageName.PERCEPTION: {
-            "field_validity": "Check whether the populated perception fields follow the requested schema and avoid obviously invalid defaults when the prompt provides a clear signal.",
-            "intent_plausibility": "Check whether player_intent is a reasonable interpretation of the user's message from {character_name}'s perspective.",
-            "emotion_plausibility": "Check whether player_emotion is a reasonable interpretation of the user's message.",
-            "threat_manipulation_sensitivity": "Check whether threat_signal and manipulation_signal reasonably capture hostile, coercive, flattering, or manipulative content.",
-            "ambiguity_appropriateness": "Check whether is_ambiguous matches how clear or unclear the user message actually is.",
+            "schema_compliance": "Validate only the produced PerceptionStage fields listed in the schema: summary, npc_perception, topic, and request_type. confidence, is_ambiguous, target, and relevant_topics are not part of the produced contract.",
+            "prompt_grounding": "Check whether npc_perception and topic are supported by specific words or implications in the user prompt, without inventing intent, emotion, threat, manipulation, or retrieval themes absent from the prompt.",
+            "character_context_fit": "Check whether the interpretation is plausible from {character_name}'s perspective, using concrete details from the supplied character definition, knowledge, past, relations, sentiment, and example dialogue context.",
+            "author_note_alignment": "Check whether the perception output matches the author guidance for this row. Treat author guidance as the test author's expected evaluation focus, not as additional world truth.",
+            "intent_topic_quality": "Check whether summary, npc_perception.perceived_intent, npc_perception.player_intent, request_type, and topic.primary form a coherent interpretation of what the player is trying to do.",
+            "topic_retrieval_quality": "Check whether topic.primary, topic.related, and topic.retrieval_queries are specific enough to help retrieval, appraisal, and strategy. Penalize generic, duplicated, or invented topic data that would not help later stages.",
+            "attitude_emotion_quality": "Check whether npc_perception.perceived_attitude and npc_perception.player_emotion capture the player's social and emotional signal without over-reading neutral prompts.",
+            "risk_signal_quality": "Check whether npc_perception.threat_signal, npc_perception.manipulation_signal, and npc_perception.topic_sensitivity correctly identify threats, coercion, flattery, bargaining, or sensitive topics without inventing risk.",
         },
         StageName.GAP_ANALYSIS: {
             "retrieval_necessity": "Check whether requesting retrieval is warranted before {character_name} answers this user message.",
@@ -330,19 +333,21 @@ class AgentTest:
         return PerceptionResult(
             raw_prompt=prompt.user_query,
             summary=self.read_string(payload, "summary", ""),
-            perceived_intent=self.read_string_list(payload, "perceived_intent"),
-            perceived_attitude=self.read_string_list(payload, "perceived_attitude"),
-            relevant_topics=self.read_string_list(payload, "relevant_topics"),
-            target=self.read_string_list(payload, "target"),
-            confidence=self.read_float(payload, "confidence", 0.0, 0.0, 1.0),
-            player_intent=self.read_string(payload, "player_intent", "unknown"),
-            player_emotion=self.read_string(payload, "player_emotion", "neutral"),
+            npc_perception=NPCPerception(
+                perceived_intent=self.read_string_list(payload["npc_perception"], "perceived_intent"),
+                perceived_attitude=self.read_string_list(payload["npc_perception"], "perceived_attitude"),
+                player_intent=self.read_string(payload["npc_perception"], "player_intent", "unknown"),
+                player_emotion=self.read_string(payload["npc_perception"], "player_emotion", "neutral"),
+                threat_signal=self.read_string(payload["npc_perception"], "threat_signal", "none"),
+                manipulation_signal=self.read_string(payload["npc_perception"], "manipulation_signal", "none"),
+                topic_sensitivity=self.read_string(payload["npc_perception"], "topic_sensitivity", "normal"),
+            ),
             request_type=self.read_string(payload, "request_type", "general"),
-            topic=self.read_string(payload, "topic", ""),
-            is_ambiguous=self.read_bool(payload, "is_ambiguous", False),
-            threat_signal=self.read_string(payload, "threat_signal", "none"),
-            manipulation_signal=self.read_string(payload, "manipulation_signal", "none"),
-            topic_sensitivity=self.read_string(payload, "topic_sensitivity", "normal"),
+            topic=PerceptionTopic(
+                primary=self.read_string(payload["topic"], "primary", ""),
+                related=self.read_string_list(payload["topic"], "related"),
+                retrieval_queries=self.read_string_list(payload["topic"], "retrieval_queries"),
+            ),
         )
 
     def simulate_gap_analysis_result(self, character: Character, prompt: StageTestPrompt) -> GapAnalysisResult:
@@ -466,21 +471,37 @@ class AgentTest:
         return payload if isinstance(payload, dict) else None
 
     def normalize_perception_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        npc_perception = payload.get("npc_perception")
+        if not isinstance(npc_perception, dict):
+            npc_perception = {}
+
+        topic = payload.get("topic")
+        if isinstance(topic, dict):
+            normalized_topic = {
+                "primary": topic.get("primary", ""),
+                "related": topic.get("related", []),
+                "retrieval_queries": topic.get("retrieval_queries", []),
+            }
+        else:
+            normalized_topic = {
+                "primary": "",
+                "related": [],
+                "retrieval_queries": [],
+            }
+
         return {
-            "player_intent": payload.get("player_intent", "unknown"),
-            "player_emotion": payload.get("player_emotion", "neutral"),
+            "npc_perception": {
+                "player_intent": npc_perception.get("player_intent", "unknown"),
+                "player_emotion": npc_perception.get("player_emotion", "neutral"),
+                "threat_signal": npc_perception.get("threat_signal", "none"),
+                "manipulation_signal": npc_perception.get("manipulation_signal", "none"),
+                "topic_sensitivity": npc_perception.get("topic_sensitivity", "normal"),
+                "perceived_intent": npc_perception.get("perceived_intent", []),
+                "perceived_attitude": npc_perception.get("perceived_attitude", []),
+            },
             "request_type": payload.get("request_type", "general"),
-            "topic": payload.get("topic", ""),
-            "is_ambiguous": payload.get("is_ambiguous", False),
-            "threat_signal": payload.get("threat_signal", "none"),
-            "manipulation_signal": payload.get("manipulation_signal", "none"),
-            "topic_sensitivity": payload.get("topic_sensitivity", "normal"),
+            "topic": normalized_topic,
             "summary": payload.get("summary", ""),
-            "perceived_intent": payload.get("perceived_intent", []),
-            "perceived_attitude": payload.get("perceived_attitude", []),
-            "relevant_topics": payload.get("relevant_topics", []),
-            "target": payload.get("target", []),
-            "confidence": payload.get("confidence", 0.0),
         }
 
     def normalize_gap_analysis_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -742,6 +763,7 @@ class AgentTest:
             "Score each metric from 0.0 to 1.0, where 1.0 is a perfect pass and 0.0 is a total failure.",
             "Set passed=true when the score is at least 0.5, otherwise false.",
             "Always include a short explanation that a human can understand.",
+            "Do not use vague explanations such as 'the interpretation is supported' or 'it passes expectations'. Pinpoint the concrete prompt phrase, output field value, character-context detail, or author-guidance detail that makes the result reasonable or unreasonable.",
             f"Character name: {character.name}",
             f"Character definition: {character.pl_list}",
             f"Character knowledge: {character.knowledge}",
@@ -752,6 +774,10 @@ class AgentTest:
             f"Source category: {prompt.source_category.value}",
             f"Target stage: {prompt.target_stage.value}",
             f"User query: {prompt.user_query}",
+            "Author guidance:",
+            prompt.notes.strip() or "No author guidance provided.",
+            "Stage output schema:",
+            self.describe_stage_output_schema(prompt.target_stage),
             "Stage inputs and supporting context:",
             self.serialize_value(execution_context),
             "Stage output to evaluate:",
@@ -761,6 +787,30 @@ class AgentTest:
             "Return JSON with this exact shape:",
             '{"metrics":[{"metric_name":"string","score":1.0,"passed":true,"explanation":"short explanation"}]}',
         ])
+
+    def describe_stage_output_schema(self, stage_name: StageName) -> str:
+        if stage_name == StageName.PERCEPTION:
+            return "\n".join([
+                "Evaluate only these PerceptionStage output fields:",
+                "summary: string",
+                "npc_perception: object with perceived_intent, perceived_attitude, threat_signal, manipulation_signal, topic_sensitivity, player_intent, and player_emotion",
+                "npc_perception.perceived_intent: list[string]",
+                "npc_perception.perceived_attitude: list[string]",
+                "npc_perception.threat_signal: string",
+                "npc_perception.manipulation_signal: string",
+                "npc_perception.topic_sensitivity: string",
+                "npc_perception.player_intent: string",
+                "npc_perception.player_emotion: string",
+                "topic: object grouping all theme and retrieval related data",
+                "topic.primary: string",
+                "topic.related: list[string]",
+                "topic.retrieval_queries: list[string]",
+                "request_type: string",
+                "Do not expect or judge confidence, is_ambiguous, target, relevant_topics, or flat topic strings; they are not part of the produced PerceptionStage contract.",
+                "Do not judge raw_prompt, stage_prompt, tool_calls, or retrieval_reasoning as model-produced perception fields; they are runtime or harness metadata.",
+            ])
+
+        return "Use the serialized stage output fields shown below as the schema for this stage."
 
     def parse_judge_output(self, raw_output: str, metrics_to_score: list[StageJudgeMetric]) -> list[StageJudgeMetricResult]:
         cleaned = raw_output.strip()
