@@ -340,7 +340,7 @@ class Character:
             tactics: A list of (label, weight) tuples for conversational tactics the NPC attempts to achieve his intended goal. Weight ranges from 0 to 1.
         """
         logger.verbose("Invoked npc intention with: %s", intention)
-        if isinstance(intention, list) == False:
+        if not isinstance(intention, str) or intention.strip() == "":
             logger.error("Malformed intention: %s", intention)
             return ("Error", None)
         
@@ -358,7 +358,7 @@ class Character:
                 labels, weights = zip(*weighted_tactics)
                 selected_tactic = random.choices(list(labels), weights=list(weights), k=1)[0]
 
-        return (str(intention), selected_tactic)
+        return (intention, selected_tactic)
     
     def immediate_actions(self, action: NPCAction):
         """
@@ -384,15 +384,14 @@ class Character:
         Tool function: When the character experiences a change in sentiment as consequence of the user prompt
 
         Args:
-            immediate_sentiment: An emotional reaction towards the user interaction
-            posture: The new posture towards the player for the ongoing conversation
+            new_sentiment: An emotional reaction towards the user interaction
             reasoning: A short explanation on why the new state was selected and how the character now feels
         """
         logger.verbose("Invoked new sentiment with: %s", new_sentiment)
         try: 
-            Sentiment(immediate_sentiment)
+            Sentiment(new_sentiment)
         except ValueError:
-            logger.error("Invalid sentiment value: %s", immediate_sentiment)
+            logger.error("Invalid sentiment value: %s", new_sentiment)
             return
         
         self.sentiment = new_sentiment + ": " + reasoning

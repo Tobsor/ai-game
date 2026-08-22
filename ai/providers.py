@@ -139,6 +139,13 @@ def _decode_raw_response(raw_response: Any) -> str:
     return str(raw_response)
 
 
+def _resolve_api_key(config: RoleProviderConfig) -> str:
+    if config.api_key_env == "":
+        return ""
+
+    return os.getenv(config.api_key_env, "")
+
+
 def _coerce_embedding_payload(embedding: Any) -> list[float]:
     if hasattr(embedding, "tolist"):
         embedding = embedding.tolist()
@@ -262,10 +269,6 @@ class HuggingFaceInferenceProviderBase:
                 "Install it with `pip install huggingface_hub`."
             )
 
-        api_key = ""
-        if self.config.api_key_env != "":
-            api_key = self.config.api_key_env
-
         client_kwargs: dict[str, Any] = {
             "timeout": float(self.config.timeout_seconds),
         }
@@ -273,6 +276,7 @@ class HuggingFaceInferenceProviderBase:
             client_kwargs["provider"] = self.config.hf_provider
         if self.config.base_url != "":
             client_kwargs["base_url"] = self.config.base_url
+        api_key = _resolve_api_key(self.config)
         if api_key != "":
             client_kwargs["api_key"] = api_key
 
@@ -412,10 +416,9 @@ def _build_headers(config: RoleProviderConfig) -> dict[str, str]:
         "Content-Type": "application/json",
     }
 
-    if config.api_key_env != "":
-        api_key = config.api_key_env
-        if api_key != "":
-            headers["Authorization"] = f"Bearer {api_key}"
+    api_key = _resolve_api_key(config)
+    if api_key != "":
+        headers["Authorization"] = f"Bearer {api_key}"
 
     return headers
 

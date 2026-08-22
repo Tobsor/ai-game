@@ -16,6 +16,7 @@ except Exception:
 
 _configured = False
 VERBOSE_LEVEL = 15
+TRACE_LEVEL = VERBOSE_LEVEL
 _current_conversation_id: ContextVar[str | None] = ContextVar("current_conversation_id", default=None)
 
 
@@ -167,7 +168,9 @@ class LoggerWithTrace(Protocol):
 def _install_verbose_level() -> None:
     if getattr(logging, "VERBOSE", None) is None:
         logging.VERBOSE = VERBOSE_LEVEL  # type: ignore[attr-defined]
+        logging.TRACE = TRACE_LEVEL  # type: ignore[attr-defined]
         logging.addLevelName(VERBOSE_LEVEL, "VERBOSE")
+        logging.addLevelName(TRACE_LEVEL, "TRACE")
 
         def verbose(self: logging.Logger, message: str, *args: Any, **kwargs: Any) -> None:
             if self.isEnabledFor(VERBOSE_LEVEL):
@@ -244,18 +247,21 @@ def _install_verbose_level() -> None:
 def configure_logging(level: Optional[str | int] = None) -> None:
     global _configured
     _install_verbose_level()
+    aliases = {
+        "TRACE": TRACE_LEVEL,
+        "VERBOSE": VERBOSE_LEVEL,
+    }
     if _configured:
         if level is not None:
-            logging.getLogger().setLevel(level)
+            logging.getLogger().setLevel(aliases.get(level, level) if isinstance(level, str) else level)
         return
 
     if load_dotenv is not None:
         load_dotenv()
 
     resolved_level = level or os.getenv("LOG_LEVEL", "INFO")
-    print("LOGLEVEL: " + str(resolved_level))
     logging.basicConfig(
-        level=resolved_level,
+        level=aliases.get(resolved_level, resolved_level) if isinstance(resolved_level, str) else resolved_level,
         format="%(levelname)s | %(name)s | %(message)s",
     )
     _configured = True
