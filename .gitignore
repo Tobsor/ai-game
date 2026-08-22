@@ -3,3 +3,5 @@
 faction_db/**
 data/**
 **/__pycache__/**
+.env
+logs

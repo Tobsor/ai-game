@@ -1,0 +1,83 @@
+import os
+import unittest
+from unittest.mock import patch
+
+from ai.settings import get_ai_settings
+
+
+class AISettingsTests(unittest.TestCase):
+    def tearDown(self):
+        get_ai_settings.cache_clear()
+
+    def test_default_profile_matches_current_hardcoded_models(self):
+        with patch.dict(os.environ, {}, clear=True):
+            get_ai_settings.cache_clear()
+            settings = get_ai_settings()
+
+        self.assertEqual(settings.profile, "local")
+        self.assertEqual(settings.decision_llm.model, "qwen3:4b-instruct-2507-q8_0")
+        self.assertEqual(settings.response_llm.model, "nollama/mythomax-l2-13b:Q4_K_M")
+        self.assertEqual(settings.judge_llm.model, "mistral:7b-instruct-v0.3-q8_0")
+        self.assertEqual(settings.embedding_model.model, "mxbai-embed-large")
+        self.assertEqual(settings.chroma.path, "./faction_db")
+        self.assertEqual(settings.chroma.collection, "factions")
+
+    def test_role_overrides_are_applied(self):
+        with patch.dict(os.environ, {
+            "AI_PROFILE": "local",
+            "DECISION_MODEL": "custom-decision",
+            "RESPONSE_MODEL": "custom-response",
+        }, clear=True):
+            get_ai_settings.cache_clear()
+            settings = get_ai_settings()
+
+        self.assertEqual(settings.decision_llm.model, "custom-decision")
+        self.assertEqual(settings.response_llm.model, "custom-response")
+
+    def test_hosted_provider_requires_base_url(self):
+        with patch.dict(os.environ, {
+            "AI_PROFILE": "local",
+            "DECISION_PROVIDER": "openai_compatible",
+            "DECISION_MODEL": "some-model",
+        }, clear=True):
+            get_ai_settings.cache_clear()
+            with self.assertRaises(ValueError):
+                get_ai_settings()
+
+    def test_huggingface_provider_does_not_require_base_url(self):
+        with patch.dict(os.environ, {
+            "AI_PROFILE": "local",
+            "DECISION_PROVIDER": "huggingface",
+            "DECISION_MODEL": "some-model",
+        }, clear=True):
+            get_ai_settings.cache_clear()
+            settings = get_ai_settings()
+
+        self.assertEqual(settings.decision_llm.provider, "huggingface")
+        self.assertEqual(settings.decision_llm.model, "some-model")
+
+    def test_huggingface_provider_supports_hf_provider_override(self):
+        with patch.dict(os.environ, {
+            "AI_PROFILE": "local",
+            "DECISION_PROVIDER": "huggingface",
+            "DECISION_MODEL": "some-model",
+            "DECISION_HF_PROVIDER": "featherless-ai",
+        }, clear=True):
+            get_ai_settings.cache_clear()
+            settings = get_ai_settings()
+
+        self.assertEqual(settings.decision_llm.provider, "huggingface")
+        self.assertEqual(settings.decision_llm.hf_provider, "featherless-ai")
+
+    def test_hugging_face_remote_profile_uses_hf_provider_config(self):
+        with patch.dict(os.environ, {
+            "AI_PROFILE": "hugging_face__remote",
+        }, clear=True):
+            get_ai_settings.cache_clear()
+            settings = get_ai_settings()
+
+        self.assertEqual(settings.decision_llm.provider, "huggingface")
+        self.assertEqual(settings.decision_llm.hf_provider, "hf-inference")
+        self.assertEqual(settings.response_llm.provider, "huggingface")
+        self.assertEqual(settings.response_llm.hf_provider, "featherless-ai")
+        self.assertEqual(settings.embedding_model.api_key_env, "HF_TOKEN")

@@ -1,5 +1,3 @@
-# Agent.md — Codex Agent Setup (Local Dev)
-
 This repo implements an **NPC roleplay/chat agent** that:
 - Builds RP prompts from a `Character` definition (pl_list, example dialogues, situation)
 - Retrieves **context** from a Chroma-backed knowledge store (mini RAG)
@@ -9,9 +7,9 @@ The core flow lives in `Character.prompt()` and `Character.initiate_conversion()
 
 ---
 
-## 1) Architecture Snapshot
+# Architecture Snapshot
 
-### File / folder structure (architectural context)
+## File / folder structure (architectural context)
 Use the repository layout as the primary mental model:
 
 - `/classes`
@@ -32,7 +30,7 @@ Use the repository layout as the primary mental model:
     - automated verification via an AI-judge model
     - classic unit tests
 
-### Top-level scripts (entrypoints and data pipelines)
+## Top-level scripts (entrypoints and data pipelines)
 - `add_character_embeddings.py`
   - Loads character data and adds embeddings to the mini RAG.
 
@@ -50,20 +48,7 @@ Prefer keeping “RP logic and orchestration” inside `/classes`, and keep “d
 
 ---
 
-## 2) Local Setup (why Codex benefits from this)
-
-This section is not primarily a “getting started guide” for humans — it’s here because Codex tends to make better changes when it understands:
-
-- **What environment assumptions are safe** (e.g., Python version range, venv usage)
-- **What dependencies are expected** (so changes don’t introduce mismatched tooling)
-- **What services might exist locally** (e.g., Chroma or a local model server), so Codex avoids implementing code that assumes cloud-only or unavailable infrastructure
-- **How the code is actually executed** (entrypoint scripts), so it edits the right files and doesn’t invent new run paths
-
-In short: it reduces “helpful but wrong” refactors, and prevents Codex from proposing changes that won’t run locally.
-
----
-
-## 3) General NPC conversation loop
+# General NPC conversation loop
 
 The rough process looks like this:
 
@@ -71,6 +56,7 @@ The rough process looks like this:
 2. **NPC starts with a greeting**.
 3. **User prompts the NPC freely** (no strict format required).
 4. **NPC computes an answer**, typically involving:
+   
    4.1 **Internal response formation**: emotional reaction, possible intentions, behavioral effects, etc.  
    4.2 **Knowledge recall / retrieval**: the character may need information (knowledge, lore, memories).  
    4.3 **Final response generation**: given the full context from 4.1 and 4.2, the LLM generates the response text.
@@ -80,7 +66,7 @@ The rough process looks like this:
 
 ---
 
-## 4) Knowledge Retrieval Rules (Chroma Metadata Filters)
+# Knowledge Retrieval Rules (Chroma Metadata Filters)
 
 The agent uses metadata filters with `$and` / `$or` to retrieve context.
 
@@ -88,15 +74,15 @@ The agent uses metadata filters with `$and` / `$or` to retrieve context.
 
 ---
 
-## 5) Prompting Conventions (RP)
+# Prompting Conventions (RP)
 
-### Greeting prompt
+## Greeting prompt
 The greeting prompt should:
 - Force first-person RP as the character
 - Include situation + character definition + example dialogues (if available)
 - Instruct the model to initiate the interaction in-character
 
-### Answer prompt
+## Answer prompt
 The answer prompt should:
 - Include situation and a “General context” section (retrieved from Chroma)
 - Enforce:
@@ -112,7 +98,7 @@ When editing prompt text:
 
 ---
 
-## 6) Developing / Extending Tools
+# Developing / Extending Tools
 
 If/when you add new “agent behaviors” (even if not formalized as tools yet), keep these principles:
 
@@ -122,25 +108,7 @@ If/when you add new “agent behaviors” (even if not formalized as tools yet),
 
 ---
 
-## 7) Debugging Checklist
-
-If the NPC responds with irrelevant text:
-- Inspect the retrieved context output from the mini RAG
-- Confirm metadata tags / filters match how documents are stored
-- Check the prompt for missing constraints (RP format, “no internal thoughts”, etc.)
-
-If retrieval seems empty or noisy:
-- Verify the embedding scripts populated the correct collections
-- Ensure the CSV data you expect is being loaded and embedded
-- Verify your filter/tag strategy matches your stored metadata schema
-
-If the loop never ends / ends too early:
-- Check the “continue/stop conversation” decision logic
-- Ensure the entry script correctly exits when the character stops
-
----
-
-## 8) What Codex Should Do in This Repo
+# What Codex Should Do in This Repo
 
 When making changes, Codex should:
 1. Preserve the existing high-level flow (selection → greeting → user prompt → context/reasoning → response → continue/stop)

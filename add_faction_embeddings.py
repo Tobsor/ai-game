@@ -62,4 +62,8 @@ def add_faction_embeddings():
 
             logger.info("%s embeddings done", faction_data.faction)
 
-add_faction_embeddings()        
+def main():
+    add_faction_embeddings()
+
+if __name__ == "__main__":
+    main()
