@@ -71,7 +71,8 @@ def read_stage_prompts(character: Character) -> list[StageTestPrompt]:
         rows = list(test_file)
 
     for row in rows:
-        for field_name in ("deterministic_checks", "judge_metrics", "stage_inputs"):
+        row.pop("judge_metrics", None)
+        for field_name in ("deterministic_checks", "stage_inputs"):
             raw_value = row.get(field_name)
             if raw_value:
                 row[field_name] = json.loads(raw_value)

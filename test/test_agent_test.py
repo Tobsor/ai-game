@@ -74,6 +74,48 @@ class FakeCharacter:
 
 
 class AgentTestTests(unittest.TestCase):
+    def test_stage_metrics_override_resource_metrics_and_filter_results(self):
+        for stage, guidance in AgentTest.STAGE_METRIC_GUIDANCE.items():
+            with self.subTest(stage=stage):
+                agent_test = AgentTest()
+                captured = []
+                names = list(guidance)
+
+                def generate(judge_prompt):
+                    captured.append(judge_prompt)
+                    return json.dumps({"metrics": [
+                        {"metric_name": name, "score": 0.8, "passed": True}
+                        for name in [*reversed(names), names[0], "resource_only"]
+                    ]})
+
+                agent_test.provider = SimpleNamespace(generate=generate)
+                prompt = StageTestPrompt(
+                    user_query="Where are you from?",
+                    source_category=PromptCategory.GENERAL,
+                    target_stage=stage,
+                    expectation_mode=StageExpectationMode.JUDGE,
+                    judge_metrics=[StageJudgeMetric(metric_name="resource_only", guidance="Ignore the stage rubric")],
+                    notes="The NPC feels embarrassed about their past.",
+                )
+                results = agent_test.evaluate_judge_metrics(FakeCharacter(), prompt, {}, {}, "{}")
+                self.assertEqual([result.metric_name for result in results], names)
+                self.assertNotIn("resource_only", captured[0])
+                self.assertNotIn("Ignore the stage rubric", captured[0])
+                if stage == StageName.PERCEPTION:
+                    self.assertIn(prompt.notes, captured[0])
+                    self.assertIn('"metric_name": "author_note"', captured[0])
+                    self.assertIn("expected outcome", captured[0])
+
+    def test_missing_stage_metric_gets_failing_result(self):
+        agent_test = AgentTest()
+        results = agent_test.parse_judge_output(
+            '{"metrics":[{"metric_name":"field_validity","score":1}]}',
+            [StageJudgeMetric(metric_name="author_note"), StageJudgeMetric(metric_name="field_validity")],
+        )
+        self.assertEqual([result.metric_name for result in results], ["author_note", "field_validity"])
+        self.assertFalse(results[0].passed)
+        self.assertEqual(results[0].score, 0.0)
+
     def test_deterministic_checks_are_supported(self):
         agent_test = AgentTest()
         prompt = StageTestPrompt(

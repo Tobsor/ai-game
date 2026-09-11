@@ -47,10 +47,10 @@ class AgentTest:
         StageName.STRATEGY,
         StageName.RESPONSE,
     }
-    UNSUPPORTED_JUDGE_METRICS = {"reasoning_relevance"}
 
     STAGE_METRIC_GUIDANCE: dict[StageName, dict[str, str]] = {
         StageName.PERCEPTION: {
+            "author_note": "Compare the perception stage output for the user input against the author note, which defines the expected outcome of the stage process. Score semantic agreement with that expected interpretation, including its nuances, rather than exact wording. If no author note is provided, return score 0.0, passed=false, and explain that the expected outcome is missing and alignment cannot be evaluated.",
             "field_validity": "Check whether the populated perception fields follow the requested schema and avoid obviously invalid defaults when the prompt provides a clear signal.",
             "intent_plausibility": "Check whether player_intent is a reasonable interpretation of the user's message from {character_name}'s perspective.",
             "emotion_plausibility": "Check whether player_emotion is a reasonable interpretation of the user's message.",
@@ -664,15 +664,9 @@ class AgentTest:
         stage_output_json: str,
     ) -> list[StageEvaluationResult]:
         active_metrics = [
-            metric for metric in prompt.judge_metrics
-            if metric.metric_name not in self.UNSUPPORTED_JUDGE_METRICS
+            StageJudgeMetric(metric_name=name, guidance=guidance)
+            for name, guidance in self.STAGE_METRIC_GUIDANCE.get(prompt.target_stage, {}).items()
         ]
-        if len(active_metrics) != len(prompt.judge_metrics):
-            skipped_metrics = sorted(
-                metric.metric_name for metric in prompt.judge_metrics
-                if metric.metric_name in self.UNSUPPORTED_JUDGE_METRICS
-            )
-            logger.info("Skipping unsupported judge metrics for %s: %s", prompt.target_stage.value, skipped_metrics)
 
         if len(active_metrics) == 0:
             return [
@@ -684,7 +678,7 @@ class AgentTest:
                     metric_name="judge_metrics_missing",
                     passed=False,
                     score=0.0,
-                    explanation="No supported judge metrics were configured for this judge-mode row.",
+                    explanation="No judge metrics are defined for this stage in AgentTest.py.",
                     expected_value=None,
                     actual_value=None,
                     stage_output=stage_output_json,
@@ -752,11 +746,14 @@ class AgentTest:
             f"Source category: {prompt.source_category.value}",
             f"Target stage: {prompt.target_stage.value}",
             f"User query: {prompt.user_query}",
+            *(["Author note (expected perception outcome):", prompt.notes.strip() or "No author note provided."]
+              if prompt.target_stage == StageName.PERCEPTION else []),
             "Stage inputs and supporting context:",
             self.serialize_value(execution_context),
             "Stage output to evaluate:",
             self.serialize_value(stage_output),
             "Metrics to score:",
+            "Return exactly one result for each listed metric and no other metrics.",
             "\n".join(rubric_items),
             "Return JSON with this exact shape:",
             '{"metrics":[{"metric_name":"string","score":1.0,"passed":true,"explanation":"short explanation"}]}',
@@ -782,18 +779,21 @@ class AgentTest:
         except json.JSONDecodeError:
             return fallback_metrics
 
-        metrics = payload.get("metrics")
+        metrics = payload.get("metrics") if isinstance(payload, dict) else None
         if not isinstance(metrics, list):
             return fallback_metrics
 
         parsed_results: list[StageJudgeMetricResult] = []
+        requested_metric_names = {metric.metric_name for metric in metrics_to_score}
+        seen_metric_names: set[str] = set()
         for metric_payload in metrics:
             if not isinstance(metric_payload, dict):
                 continue
 
             metric_name = str(metric_payload.get("metric_name", "")).strip()
-            if metric_name == "":
+            if metric_name not in requested_metric_names or metric_name in seen_metric_names:
                 continue
+            seen_metric_names.add(metric_name)
 
             explanation = str(metric_payload.get("explanation", "")).strip()
             try:
@@ -832,7 +832,8 @@ class AgentTest:
                 )
             )
 
-        return parsed_results
+        results_by_name = {result.metric_name: result for result in parsed_results}
+        return [results_by_name[metric.metric_name] for metric in metrics_to_score]
 
     def apply_operator(self, actual_value: Any, operator: str, expected_value: Any) -> bool:
         if operator == "equals":
