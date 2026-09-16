@@ -12,7 +12,7 @@ class RecordingGapAnalysisStage:
     def __init__(self):
         self.last_perception = None
 
-    def run(self, perception):
+    def run(self, perception, available_context=""):
         self.last_perception = perception
         return GapAnalysisResult(tool_calls=[])
 

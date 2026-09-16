@@ -114,12 +114,12 @@ def test_agent(character: Character) -> None:
     AgentTest().evaluate_prompts(prompts=prompts_to_run, character=character)
 
 
-all_characters = read_characters(Path("./data/character_data_cop.csv"))
-selected_character = choose_option(
-    title="Choose character to test:",
-    options=all_characters,
-    label_for_option=lambda character: character.get("name", ""),
-)
-
-npc = Character(selected_character, situation)
-test_agent(npc)
+if __name__ == "__main__":
+    all_characters = read_characters(Path("./data/character_data_cop.csv"))
+    selected_character = choose_option(
+        title="Choose character to test:",
+        options=all_characters,
+        label_for_option=lambda character: character.get("name", ""),
+    )
+    npc = Character(selected_character, situation)
+    test_agent(npc)

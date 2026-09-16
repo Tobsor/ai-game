@@ -58,9 +58,13 @@ class AgentTest:
             "ambiguity_appropriateness": "Check whether is_ambiguous matches how clear or unclear the user message actually is.",
         },
         StageName.GAP_ANALYSIS: {
-            "retrieval_necessity": "Check whether requesting retrieval is warranted before {character_name} answers this user message.",
+            "memory_necessity": "Check whether missing prior events or personal memories require recall_memory, and whether unnecessary memory retrieval is avoided.",
+            "knowledge_necessity": "Check whether missing world, faction, or topic facts require recall_knowledge, and whether unnecessary knowledge retrieval is avoided.",
+            "interaction_memory_necessity": "Check whether past player interactions need retrieval. Specific events may require recall_memory; trust, relationship history, and shared context may require recall_relationship. Allow overlap when justified by the missing information.",
+            "context_completeness": "Check whether available context fully, partially, or inadequately answers the request. Complete context should produce no calls; partial context should trigger only remaining gaps; irrelevant context must not suppress retrieval.",
+            "author_note": "Compare the complete retrieval decision against the author note, which defines the expected outcome. Judge semantic agreement, not exact wording. If the note is missing, return score 0.0, passed=false, and explain that alignment cannot be evaluated.",
             "tool_relevance": "Check whether the selected retrieval tools are relevant to the information {character_name} would need.",
-            "tool_minimality": "Check whether the tool selection is not obviously excessive for the prompt.",
+            "tool_minimality": "Check whether tool calls avoid unrelated, redundant, or duplicate retrieval requests.",
         },
         StageName.RETRIEVAL_SUMMARIZE: {
             "relevance": "Check whether the summary keeps only context that is clearly relevant to the user's message.",
@@ -231,14 +235,26 @@ class AgentTest:
         }
 
     def execute_gap_analysis_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
+        if self.get_test_payload(prompt, "perception") is None:
+            raise ValueError("Gap analysis tests require an explicit perception_payload.")
         perception = self.simulate_perception_result(character, prompt)
-        gap_analysis = character.pipeline.gap_analysis_stage.run(perception)
+        available_context = prompt.stage_inputs.get("available_context", "")
+        if not isinstance(available_context, str):
+            raise ValueError("available_context must be a string.")
+        gap_analysis = character.pipeline.gap_analysis_stage.run(perception, available_context=available_context)
+        tool_names = [call.function.name for call in gap_analysis.tool_calls]
 
         return gap_analysis, {
             "perception": self.to_plain_data(perception),
-            "gap_analysis_tool_names": [
-                tool_call.function.name for tool_call in gap_analysis.tool_calls
-            ],
+            "available_context": available_context,
+            "gap_analysis_tool_names": sorted(set(tool_names)),
+            "gap_analysis_duplicate_count": len(tool_names) - len(set(tool_names)),
+            "gap_analysis_arguments_valid": all(
+                isinstance(call.function.arguments, dict)
+                and isinstance(call.function.arguments.get("reasoning"), str)
+                and bool(call.function.arguments["reasoning"].strip())
+                for call in gap_analysis.tool_calls
+            ),
         }
 
     def execute_retrieval_run_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
@@ -650,6 +666,7 @@ class AgentTest:
                     actual_value=self.serialize_scalar(actual_value),
                     stage_output=stage_output_json,
                     notes=prompt.notes,
+                    input_context=execution_context.get("available_context", "") if prompt.target_stage == StageName.GAP_ANALYSIS else "",
                 )
             )
 
@@ -683,6 +700,7 @@ class AgentTest:
                     actual_value=None,
                     stage_output=stage_output_json,
                     notes=prompt.notes,
+                    input_context=execution_context.get("available_context", "") if prompt.target_stage == StageName.GAP_ANALYSIS else "",
                 )
             ]
 
@@ -704,6 +722,7 @@ class AgentTest:
                 actual_value=result.score,
                 stage_output=stage_output_json,
                 notes=prompt.notes,
+                input_context=execution_context.get("available_context", "") if prompt.target_stage == StageName.GAP_ANALYSIS else "",
             )
             for result in metric_results
         ]
@@ -746,8 +765,8 @@ class AgentTest:
             f"Source category: {prompt.source_category.value}",
             f"Target stage: {prompt.target_stage.value}",
             f"User query: {prompt.user_query}",
-            *(["Author note (expected perception outcome):", prompt.notes.strip() or "No author note provided."]
-              if prompt.target_stage == StageName.PERCEPTION else []),
+            *(["Author note (expected stage outcome):", prompt.notes.strip() or "No author note provided."]
+              if prompt.target_stage in {StageName.PERCEPTION, StageName.GAP_ANALYSIS} else []),
             "Stage inputs and supporting context:",
             self.serialize_value(execution_context),
             "Stage output to evaluate:",

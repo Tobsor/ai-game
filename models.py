@@ -181,3 +181,4 @@ class StageEvaluationResult(BaseModel):
     actual_value: Any = None
     stage_output: str
     notes: str = ""
+    input_context: str = ""
