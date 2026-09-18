@@ -325,7 +325,7 @@ class AgentTestTests(unittest.TestCase):
 
         self.assertIn(
             "knowledge_scope_alignment",
-            agent_test.STAGE_METRIC_GUIDANCE[StageName.RETRIEVAL_SUMMARIZE],
+            agent_test.STAGE_METRIC_GUIDANCE[StageName.RETRIEVAL_RUN],
         )
 
 

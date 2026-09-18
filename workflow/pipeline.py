@@ -84,7 +84,7 @@ class TurnPipeline:
                 f"tool_calls={len(gap_analysis.tool_calls)}",
             )
 
-            stage_name = "RetrievalStage.run"
+            stage_name = "RetrievalStage"
             stage_payload = gap_analysis
             self._log_stage_start(stage_name, stage_payload)
             retrieved_context = self.retrieval_stage.run(perception, gap_analysis)

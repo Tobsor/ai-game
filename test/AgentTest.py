@@ -42,7 +42,6 @@ class AgentTest:
         StageName.PERCEPTION,
         StageName.GAP_ANALYSIS,
         StageName.RETRIEVAL_RUN,
-        StageName.RETRIEVAL_SUMMARIZE,
         StageName.APPRAISAL,
         StageName.STRATEGY,
         StageName.RESPONSE,
@@ -66,17 +65,12 @@ class AgentTest:
             "tool_relevance": "Check whether the selected retrieval tools are relevant to the information {character_name} would need.",
             "tool_minimality": "Check whether tool calls avoid unrelated, redundant, or duplicate retrieval requests.",
         },
-        StageName.RETRIEVAL_SUMMARIZE: {
-            "relevance": "Check whether the summary keeps only context that is clearly relevant to the user's message.",
-            "factual_faithfulness": "Check whether the summary stays faithful to the retrieved context and does not distort it.",
-            "unsupported_fact_omission": "Check whether the summary avoids inventing unsupported facts or conclusions.",
-            "downstream_usefulness": "Check whether the summary would be useful as concise response context for the next stage.",
-            "knowledge_scope_alignment": "Check whether the retained information seems reasonably aligned with what {character_name} could realistically know or retrieve.",
-        },
         StageName.RETRIEVAL_RUN: {
-            "fetch_relevance": "Check whether the executed retrieval operations match the context {character_name} needs before answering.",
-            "context_relevance": "Check whether the retrieved context is relevant to the player's message.",
-            "summary_usefulness": "Check whether the combined retrieved context gives downstream stages useful, concise information.",
+            "fetch_relevance": "Assess whether the supplied retrieval operations address the information {character_name} needs for the player's request, using their resulting context as supporting evidence.",
+            "context_relevance": "Assess the relevance of the individual retrieved context fields to the player's request.",
+            "summary_quality": "Assess whether combined_context accurately and concisely summarizes the individual retrieved context fields, retains relevant facts, excludes irrelevant material, and avoids distortion or unsupported additions. Judge correctness against those source fields. Do not penalize the summary for omitting facts retrieval never supplied; evaluate those discrepancies under author_note instead. Return one score and explain material omissions, inaccuracies, unsupported claims, or unnecessary content.",
+            "knowledge_scope_alignment": "Assess whether the retrieved and summarized information is reasonably within {character_name}'s knowledge or retrieval scope, given the supplied character and test context.",
+            "author_note": "Assess semantic agreement between the complete retrieval outcome and the author note, which defines the expected outcome. Distinguish expected retrieved facts from expected summary content when specified. If the note is missing or blank, return score 0.0, passed=false, and explain that expected-outcome alignment cannot be assessed.",
         },
         StageName.APPRAISAL: {
             "appraisal_plausibility": "Check whether the appraisal reasonably evaluates the final perception against {character_name}'s values, goals, relationship state, and situation.",
@@ -203,8 +197,6 @@ class AgentTest:
             return self.execute_gap_analysis_stage(character, prompt)
         if prompt.target_stage == StageName.RETRIEVAL_RUN:
             return self.execute_retrieval_run_stage(character, prompt)
-        if prompt.target_stage == StageName.RETRIEVAL_SUMMARIZE:
-            return self.execute_retrieval_summary_stage(character, prompt)
         if prompt.target_stage == StageName.APPRAISAL:
             return self.execute_appraisal_stage(character, prompt)
         if prompt.target_stage == StageName.STRATEGY:
@@ -258,6 +250,13 @@ class AgentTest:
         }
 
     def execute_retrieval_run_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
+        missing_inputs = [
+            f"{stage_key}_payload"
+            for stage_key in ("perception", "gap_analysis")
+            if self.get_test_payload(prompt, stage_key) is None
+        ]
+        if missing_inputs:
+            raise ValueError("Retrieval tests require explicit inputs: " + ", ".join(missing_inputs))
         perception = self.simulate_perception_result(character, prompt)
         gap_analysis = self.simulate_gap_analysis_result(character, prompt)
         retrieved_context = character.pipeline.retrieval_stage.run(perception, gap_analysis)
@@ -268,16 +267,6 @@ class AgentTest:
             "gap_analysis_tool_names": [
                 tool_call.function.name for tool_call in gap_analysis.tool_calls
             ],
-        }
-
-    def execute_retrieval_summary_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
-        perception = self.simulate_perception_result(character, prompt)
-        raw_context = str(prompt.stage_inputs.get("raw_retrieved_context", "")).strip()
-        summary = character.pipeline.retrieval_stage.summarize_retrieved_context(perception, raw_context)
-
-        return summary, {
-            "perception": self.to_plain_data(perception),
-            "raw_retrieved_context": raw_context,
         }
 
     def execute_appraisal_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
@@ -766,7 +755,7 @@ class AgentTest:
             f"Target stage: {prompt.target_stage.value}",
             f"User query: {prompt.user_query}",
             *(["Author note (expected stage outcome):", prompt.notes.strip() or "No author note provided."]
-              if prompt.target_stage in {StageName.PERCEPTION, StageName.GAP_ANALYSIS} else []),
+              if prompt.target_stage in {StageName.PERCEPTION, StageName.GAP_ANALYSIS, StageName.RETRIEVAL_RUN} else []),
             "Stage inputs and supporting context:",
             self.serialize_value(execution_context),
             "Stage output to evaluate:",

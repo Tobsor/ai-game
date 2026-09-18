@@ -131,8 +131,7 @@ class StageExpectationMode(str, Enum):
 class StageName(str, Enum):
     PERCEPTION = "PerceptionStage"
     GAP_ANALYSIS = "GapAnalysisStage"
-    RETRIEVAL_RUN = "RetrievalStage.run"
-    RETRIEVAL_SUMMARIZE = "RetrievalStage.summarize"
+    RETRIEVAL_RUN = "RetrievalStage"
     APPRAISAL = "AppraisalStage"
     STRATEGY = "StrategyStage"
     RESPONSE = "ResponseStage"
