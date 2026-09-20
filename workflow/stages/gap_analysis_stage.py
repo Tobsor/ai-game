@@ -9,13 +9,14 @@ logger = get_logger(__name__)
 
 
 class GapAnalysisStage(LLMStage):
-    def get_prompt(self, perception: PerceptionResult) -> str:
+    def get_prompt(self, perception: PerceptionResult, available_context: str = "") -> str:
         return format_prompt(
             "Analyze the current perception result and decide whether the NPC still has knowledge gaps before answering. If additional retrieval or context gathering is needed, express that decision through the provided retrieval tools. If no retrieval is needed, do not call any tools.",
             [
                 ("Player input", perception.raw_prompt),
-                ("Detected intent", perception.npc_perception.player_intent),
-                ("Detected emotion", perception.npc_perception.player_emotion),
+                ("Available context", available_context or "No additional context provided."),
+                ("Detected intent", perception.player_intent),
+                ("Detected emotion", perception.player_emotion),
                 ("Request type", perception.request_type),
                 ("Primary topic", perception.topic.primary),
                 ("Related topics", ", ".join(perception.topic.related)),
@@ -30,6 +31,7 @@ class GapAnalysisStage(LLMStage):
                         "If more context is needed, call the relevant retrieval tools directly.",
                         "Tool calls should reflect the concrete context collection needed for downstream retrieval.",
                         "Only call tools when retrieval is actually required.",
+                        "Use available context to identify what is already known. Do not retrieve information already sufficient to answer; retrieve only remaining gaps. Irrelevant context does not resolve a gap.",
                         "Only use tools that retrieve additional context such as memory, relationship history, knowledge, or social context.",
                     ]),
                 ),
@@ -37,9 +39,9 @@ class GapAnalysisStage(LLMStage):
             ],
         )
 
-    def run(self, perception: PerceptionResult) -> GapAnalysisResult:
+    def run(self, perception: PerceptionResult, available_context: str = "") -> GapAnalysisResult:
         logger.verbose("Running gap analysis with %s tool calls", len(perception.tool_calls))
-        stage_prompt = self.get_prompt(perception)
+        stage_prompt = self.get_prompt(perception, available_context)
         response = self.character.agent.run_prompt(
             prompt=stage_prompt,
             tools=[

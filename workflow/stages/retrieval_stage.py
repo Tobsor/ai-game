@@ -66,7 +66,7 @@ class RetrievalStage(LLMStage):
                 perception,
                 tool_arguments,
             ),
-            stage_name="RetrievalStage.run",
+            stage_name="RetrievalStage",
         ).strip() or "no information"
 
     def recall_relationship(self, perception: PerceptionResult, tool_arguments: dict) -> str:
@@ -76,7 +76,7 @@ class RetrievalStage(LLMStage):
                 perception,
                 tool_arguments,
             ),
-            stage_name="RetrievalStage.run",
+            stage_name="RetrievalStage",
         ).strip() or "no information"
 
     def recall_knowledge(self, perception: PerceptionResult, tool_arguments: dict) -> str:
@@ -86,7 +86,7 @@ class RetrievalStage(LLMStage):
                 perception,
                 tool_arguments,
             ),
-            stage_name="RetrievalStage.run",
+            stage_name="RetrievalStage",
         ).strip() or "no information"
 
     def evaluate_social_context(self, perception: PerceptionResult, tool_arguments: dict) -> str:
@@ -96,7 +96,7 @@ class RetrievalStage(LLMStage):
                 perception,
                 tool_arguments,
             ),
-            stage_name="RetrievalStage.run",
+            stage_name="RetrievalStage",
         ).strip() or "no information"
 
     def summarize_retrieved_context(self, perception: PerceptionResult, raw_context: str) -> str:

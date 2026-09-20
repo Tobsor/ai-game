@@ -42,40 +42,35 @@ class AgentTest:
         StageName.PERCEPTION,
         StageName.GAP_ANALYSIS,
         StageName.RETRIEVAL_RUN,
-        StageName.RETRIEVAL_SUMMARIZE,
         StageName.APPRAISAL,
         StageName.STRATEGY,
         StageName.RESPONSE,
     }
-    UNSUPPORTED_JUDGE_METRICS = {"reasoning_relevance"}
 
     STAGE_METRIC_GUIDANCE: dict[StageName, dict[str, str]] = {
         StageName.PERCEPTION: {
-            "schema_compliance": "Validate only the produced PerceptionStage fields listed in the schema: summary, npc_perception, topic, and request_type. confidence, is_ambiguous, target, and relevant_topics are not part of the produced contract.",
-            "prompt_grounding": "Check whether npc_perception and topic are supported by specific words or implications in the user prompt, without inventing intent, emotion, threat, manipulation, or retrieval themes absent from the prompt.",
-            "character_context_fit": "Check whether the interpretation is plausible from {character_name}'s perspective, using concrete details from the supplied character definition, knowledge, past, relations, sentiment, and example dialogue context.",
-            "author_note_alignment": "Check whether the perception output matches the author guidance for this row. Treat author guidance as the test author's expected evaluation focus, not as additional world truth.",
-            "intent_topic_quality": "Check whether summary, npc_perception.perceived_intent, npc_perception.player_intent, request_type, and topic.primary form a coherent interpretation of what the player is trying to do.",
-            "topic_retrieval_quality": "Check whether topic.primary, topic.related, and topic.retrieval_queries are specific enough to help retrieval, appraisal, and strategy. Penalize generic, duplicated, or invented topic data that would not help later stages.",
-            "attitude_emotion_quality": "Check whether npc_perception.perceived_attitude and npc_perception.player_emotion capture the player's social and emotional signal without over-reading neutral prompts.",
-            "risk_signal_quality": "Check whether npc_perception.threat_signal, npc_perception.manipulation_signal, and npc_perception.topic_sensitivity correctly identify threats, coercion, flattery, bargaining, or sensitive topics without inventing risk.",
+            "author_note": "Compare the perception stage output for the user input against the author note, which defines the expected outcome of the stage process. Score semantic agreement with that expected interpretation, including its nuances, rather than exact wording. If no author note is provided, return score 0.0, passed=false, and explain that the expected outcome is missing and alignment cannot be evaluated.",
+            "field_validity": "Check whether the populated perception fields follow the requested schema and avoid obviously invalid defaults when the prompt provides a clear signal.",
+            "intent_plausibility": "Check whether player_intent is a reasonable interpretation of the user's message from {character_name}'s perspective.",
+            "emotion_plausibility": "Check whether player_emotion is a reasonable interpretation of the user's message.",
+            "threat_manipulation_sensitivity": "Check whether threat_signal and manipulation_signal reasonably capture hostile, coercive, flattering, or manipulative content.",
+            "ambiguity_appropriateness": "Check whether is_ambiguous matches how clear or unclear the user message actually is.",
         },
         StageName.GAP_ANALYSIS: {
-            "retrieval_necessity": "Check whether requesting retrieval is warranted before {character_name} answers this user message.",
+            "memory_necessity": "Check whether missing prior events or personal memories require recall_memory, and whether unnecessary memory retrieval is avoided.",
+            "knowledge_necessity": "Check whether missing world, faction, or topic facts require recall_knowledge, and whether unnecessary knowledge retrieval is avoided.",
+            "interaction_memory_necessity": "Check whether past player interactions need retrieval. Specific events may require recall_memory; trust, relationship history, and shared context may require recall_relationship. Allow overlap when justified by the missing information.",
+            "context_completeness": "Check whether available context fully, partially, or inadequately answers the request. Complete context should produce no calls; partial context should trigger only remaining gaps; irrelevant context must not suppress retrieval.",
+            "author_note": "Compare the complete retrieval decision against the author note, which defines the expected outcome. Judge semantic agreement, not exact wording. If the note is missing, return score 0.0, passed=false, and explain that alignment cannot be evaluated.",
             "tool_relevance": "Check whether the selected retrieval tools are relevant to the information {character_name} would need.",
-            "tool_minimality": "Check whether the tool selection is not obviously excessive for the prompt.",
-        },
-        StageName.RETRIEVAL_SUMMARIZE: {
-            "relevance": "Check whether the summary keeps only context that is clearly relevant to the user's message.",
-            "factual_faithfulness": "Check whether the summary stays faithful to the retrieved context and does not distort it.",
-            "unsupported_fact_omission": "Check whether the summary avoids inventing unsupported facts or conclusions.",
-            "downstream_usefulness": "Check whether the summary would be useful as concise response context for the next stage.",
-            "knowledge_scope_alignment": "Check whether the retained information seems reasonably aligned with what {character_name} could realistically know or retrieve.",
+            "tool_minimality": "Check whether tool calls avoid unrelated, redundant, or duplicate retrieval requests.",
         },
         StageName.RETRIEVAL_RUN: {
-            "fetch_relevance": "Check whether the executed retrieval operations match the context {character_name} needs before answering.",
-            "context_relevance": "Check whether the retrieved context is relevant to the player's message.",
-            "summary_usefulness": "Check whether the combined retrieved context gives downstream stages useful, concise information.",
+            "fetch_relevance": "Assess whether the supplied retrieval operations address the information {character_name} needs for the player's request, using their resulting context as supporting evidence.",
+            "context_relevance": "Assess the relevance of the individual retrieved context fields to the player's request.",
+            "summary_quality": "Assess whether combined_context accurately and concisely summarizes the individual retrieved context fields, retains relevant facts, excludes irrelevant material, and avoids distortion or unsupported additions. Judge correctness against those source fields. Do not penalize the summary for omitting facts retrieval never supplied; evaluate those discrepancies under author_note instead. Return one score and explain material omissions, inaccuracies, unsupported claims, or unnecessary content.",
+            "knowledge_scope_alignment": "Assess whether the retrieved and summarized information is reasonably within {character_name}'s knowledge or retrieval scope, given the supplied character and test context.",
+            "author_note": "Assess semantic agreement between the complete retrieval outcome and the author note, which defines the expected outcome. Distinguish expected retrieved facts from expected summary content when specified. If the note is missing or blank, return score 0.0, passed=false, and explain that expected-outcome alignment cannot be assessed.",
         },
         StageName.APPRAISAL: {
             "appraisal_plausibility": "Check whether the appraisal reasonably evaluates the final perception against {character_name}'s values, goals, relationship state, and situation.",
@@ -202,8 +197,6 @@ class AgentTest:
             return self.execute_gap_analysis_stage(character, prompt)
         if prompt.target_stage == StageName.RETRIEVAL_RUN:
             return self.execute_retrieval_run_stage(character, prompt)
-        if prompt.target_stage == StageName.RETRIEVAL_SUMMARIZE:
-            return self.execute_retrieval_summary_stage(character, prompt)
         if prompt.target_stage == StageName.APPRAISAL:
             return self.execute_appraisal_stage(character, prompt)
         if prompt.target_stage == StageName.STRATEGY:
@@ -234,17 +227,36 @@ class AgentTest:
         }
 
     def execute_gap_analysis_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
+        if self.get_test_payload(prompt, "perception") is None:
+            raise ValueError("Gap analysis tests require an explicit perception_payload.")
         perception = self.simulate_perception_result(character, prompt)
-        gap_analysis = character.pipeline.gap_analysis_stage.run(perception)
+        available_context = prompt.stage_inputs.get("available_context", "")
+        if not isinstance(available_context, str):
+            raise ValueError("available_context must be a string.")
+        gap_analysis = character.pipeline.gap_analysis_stage.run(perception, available_context=available_context)
+        tool_names = [call.function.name for call in gap_analysis.tool_calls]
 
         return gap_analysis, {
             "perception": self.to_plain_data(perception),
-            "gap_analysis_tool_names": [
-                tool_call.function.name for tool_call in gap_analysis.tool_calls
-            ],
+            "available_context": available_context,
+            "gap_analysis_tool_names": sorted(set(tool_names)),
+            "gap_analysis_duplicate_count": len(tool_names) - len(set(tool_names)),
+            "gap_analysis_arguments_valid": all(
+                isinstance(call.function.arguments, dict)
+                and isinstance(call.function.arguments.get("reasoning"), str)
+                and bool(call.function.arguments["reasoning"].strip())
+                for call in gap_analysis.tool_calls
+            ),
         }
 
     def execute_retrieval_run_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
+        missing_inputs = [
+            f"{stage_key}_payload"
+            for stage_key in ("perception", "gap_analysis")
+            if self.get_test_payload(prompt, stage_key) is None
+        ]
+        if missing_inputs:
+            raise ValueError("Retrieval tests require explicit inputs: " + ", ".join(missing_inputs))
         perception = self.simulate_perception_result(character, prompt)
         gap_analysis = self.simulate_gap_analysis_result(character, prompt)
         retrieved_context = character.pipeline.retrieval_stage.run(perception, gap_analysis)
@@ -255,16 +267,6 @@ class AgentTest:
             "gap_analysis_tool_names": [
                 tool_call.function.name for tool_call in gap_analysis.tool_calls
             ],
-        }
-
-    def execute_retrieval_summary_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
-        perception = self.simulate_perception_result(character, prompt)
-        raw_context = str(prompt.stage_inputs.get("raw_retrieved_context", "")).strip()
-        summary = character.pipeline.retrieval_stage.summarize_retrieved_context(perception, raw_context)
-
-        return summary, {
-            "perception": self.to_plain_data(perception),
-            "raw_retrieved_context": raw_context,
         }
 
     def execute_appraisal_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
@@ -671,6 +673,7 @@ class AgentTest:
                     actual_value=self.serialize_scalar(actual_value),
                     stage_output=stage_output_json,
                     notes=prompt.notes,
+                    input_context=execution_context.get("available_context", "") if prompt.target_stage == StageName.GAP_ANALYSIS else "",
                 )
             )
 
@@ -685,15 +688,9 @@ class AgentTest:
         stage_output_json: str,
     ) -> list[StageEvaluationResult]:
         active_metrics = [
-            metric for metric in prompt.judge_metrics
-            if metric.metric_name not in self.UNSUPPORTED_JUDGE_METRICS
+            StageJudgeMetric(metric_name=name, guidance=guidance)
+            for name, guidance in self.STAGE_METRIC_GUIDANCE.get(prompt.target_stage, {}).items()
         ]
-        if len(active_metrics) != len(prompt.judge_metrics):
-            skipped_metrics = sorted(
-                metric.metric_name for metric in prompt.judge_metrics
-                if metric.metric_name in self.UNSUPPORTED_JUDGE_METRICS
-            )
-            logger.info("Skipping unsupported judge metrics for %s: %s", prompt.target_stage.value, skipped_metrics)
 
         if len(active_metrics) == 0:
             return [
@@ -705,11 +702,12 @@ class AgentTest:
                     metric_name="judge_metrics_missing",
                     passed=False,
                     score=0.0,
-                    explanation="No supported judge metrics were configured for this judge-mode row.",
+                    explanation="No judge metrics are defined for this stage in AgentTest.py.",
                     expected_value=None,
                     actual_value=None,
                     stage_output=stage_output_json,
                     notes=prompt.notes,
+                    input_context=execution_context.get("available_context", "") if prompt.target_stage == StageName.GAP_ANALYSIS else "",
                 )
             ]
 
@@ -731,6 +729,7 @@ class AgentTest:
                 actual_value=result.score,
                 stage_output=stage_output_json,
                 notes=prompt.notes,
+                input_context=execution_context.get("available_context", "") if prompt.target_stage == StageName.GAP_ANALYSIS else "",
             )
             for result in metric_results
         ]
@@ -774,15 +773,14 @@ class AgentTest:
             f"Source category: {prompt.source_category.value}",
             f"Target stage: {prompt.target_stage.value}",
             f"User query: {prompt.user_query}",
-            "Author guidance:",
-            prompt.notes.strip() or "No author guidance provided.",
-            "Stage output schema:",
-            self.describe_stage_output_schema(prompt.target_stage),
+            *(["Author note (expected stage outcome):", prompt.notes.strip() or "No author note provided."]
+              if prompt.target_stage in {StageName.PERCEPTION, StageName.GAP_ANALYSIS, StageName.RETRIEVAL_RUN} else []),
             "Stage inputs and supporting context:",
             self.serialize_value(execution_context),
             "Stage output to evaluate:",
             self.serialize_value(stage_output),
             "Metrics to score:",
+            "Return exactly one result for each listed metric and no other metrics.",
             "\n".join(rubric_items),
             "Return JSON with this exact shape:",
             '{"metrics":[{"metric_name":"string","score":1.0,"passed":true,"explanation":"short explanation"}]}',
@@ -832,18 +830,21 @@ class AgentTest:
         except json.JSONDecodeError:
             return fallback_metrics
 
-        metrics = payload.get("metrics")
+        metrics = payload.get("metrics") if isinstance(payload, dict) else None
         if not isinstance(metrics, list):
             return fallback_metrics
 
         parsed_results: list[StageJudgeMetricResult] = []
+        requested_metric_names = {metric.metric_name for metric in metrics_to_score}
+        seen_metric_names: set[str] = set()
         for metric_payload in metrics:
             if not isinstance(metric_payload, dict):
                 continue
 
             metric_name = str(metric_payload.get("metric_name", "")).strip()
-            if metric_name == "":
+            if metric_name not in requested_metric_names or metric_name in seen_metric_names:
                 continue
+            seen_metric_names.add(metric_name)
 
             explanation = str(metric_payload.get("explanation", "")).strip()
             try:
@@ -882,7 +883,8 @@ class AgentTest:
                 )
             )
 
-        return parsed_results
+        results_by_name = {result.metric_name: result for result in parsed_results}
+        return [results_by_name[metric.metric_name] for metric in metrics_to_score]
 
     def apply_operator(self, actual_value: Any, operator: str, expected_value: Any) -> bool:
         if operator == "equals":

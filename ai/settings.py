@@ -78,7 +78,7 @@ BUILT_IN_PROFILES: dict[str, AISettings] = {
         ),
         judge_llm=RoleProviderConfig(
             provider="huggingface",
-            model="Qwen/Qwen2.5-7B-Instruct:together",
+            model="Qwen/Qwen3-4B-Instruct-2507:nscale",
             hf_provider="hf-inference",
             api_key_env="HF_TOKEN",
             base_url="https://router.huggingface.co/v1"

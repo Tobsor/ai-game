@@ -282,7 +282,7 @@ class TurnPipelineTests(unittest.TestCase):
         pipeline = TurnPipeline(character)
 
         pipeline.run(TurnInput(prompt="Do you remember me?"))
-        self.assertEqual(character.db.stage_query_calls.get("RetrievalStage.run"), 2)
+        self.assertEqual(character.db.stage_query_calls.get("RetrievalStage"), 2)
         self.assertEqual(len(character.agent.prompts), 6)
 
     def test_original_prompt_flows_into_response(self):
@@ -619,7 +619,7 @@ class TurnPipelineTests(unittest.TestCase):
         result = pipeline.run(TurnInput(prompt="What happened last time?"))
 
         self.assertEqual(result.gap_analysis.tool_calls, gap_tool_calls)
-        self.assertEqual(character.db.stage_query_calls.get("RetrievalStage.run"), 1)
+        self.assertEqual(character.db.stage_query_calls.get("RetrievalStage"), 1)
         self.assertEqual(result.retrieved_context.memory_context, "retrieved lore")
         self.assertEqual(result.retrieved_context.combined_context, "summarized retrieved lore")
         self.assertEqual(result.retrieved_context.relationship_context, "no information")
@@ -686,8 +686,8 @@ class TurnPipelineTests(unittest.TestCase):
             "PerceptionStage completed successfully",
             "GapAnalysisStage started",
             "GapAnalysisStage completed successfully",
-            "RetrievalStage.run started",
-            "RetrievalStage.run completed successfully",
+            "RetrievalStage started",
+            "RetrievalStage completed successfully",
             "AppraisalStage started",
             "AppraisalStage completed successfully",
             "StrategyStage started",
@@ -729,7 +729,7 @@ class TurnPipelineTests(unittest.TestCase):
             self.assertIn("conversation_id:", content)
             self.assertIn("=== Stage: InitialContextStage ===", content)
             self.assertIn("=== Stage: PerceptionStage ===", content)
-            self.assertIn("=== Stage: RetrievalStage.run ===", content)
+            self.assertIn("=== Stage: RetrievalStage ===", content)
             self.assertIn("=== Stage: AppraisalStage ===", content)
             self.assertIn("=== Stage: ResponseStage ===", content)
             self.assertIn("=== Stage: TerminalUpdateStage ===", content)

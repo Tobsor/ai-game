@@ -135,7 +135,8 @@ def read_stage_prompts(character: Character) -> list[StageTestPrompt]:
         rows = list(test_file)
 
     for row in rows:
-        for field_name in ("deterministic_checks", "judge_metrics", "stage_inputs"):
+        row.pop("judge_metrics", None)
+        for field_name in ("deterministic_checks", "stage_inputs"):
             raw_value = row.get(field_name)
             if raw_value:
                 row[field_name] = json.loads(raw_value)
@@ -216,29 +217,12 @@ def test_agent(character: Character, selected_stage_name: str | None = None) -> 
     AgentTest().evaluate_prompts(prompts=prompts_to_run, character=character)
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run stage-aware NPC agent tests.")
-    parser.add_argument("--character", help="Character name to test. Omit for the interactive menu.")
-    parser.add_argument("--stage", help=f"Stage to run, or '{STAGE_ALL}'. Omit for the interactive menu.")
-    parser.add_argument("--characters-file", default="./data/character_data_cop.csv", help="Path to the character CSV.")
-    parser.add_argument("--list-characters", action="store_true", help="List available characters and exit.")
-    return parser.parse_args(argv)
-
-
-def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv)
-    characters = read_characters(Path(args.characters_file))
-
-    if args.list_characters:
-        for character in characters:
-            print(character.get("name", ""))
-        return 0
-
-    selected_character = select_character(characters, args.character)
-    npc = Character(selected_character, situation)
-    test_agent(npc, args.stage)
-    return 0
-
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    all_characters = read_characters(Path("./data/character_data_cop.csv"))
+    selected_character = choose_option(
+        title="Choose character to test:",
+        options=all_characters,
+        label_for_option=lambda character: character.get("name", ""),
+    )
+    npc = Character(selected_character, situation)
+    test_agent(npc)
