@@ -84,7 +84,7 @@ class AgentTestTests(unittest.TestCase):
                 def generate(judge_prompt):
                     captured.append(judge_prompt)
                     return json.dumps({"metrics": [
-                        {"metric_name": name, "score": 0.8, "passed": True}
+                        {"metric_name": name, "score": 0.8, "passed": True, "explanation": "Supported by context."}
                         for name in [*reversed(names), names[0], "resource_only"]
                     ]})
 
