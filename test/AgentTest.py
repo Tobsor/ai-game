@@ -32,6 +32,14 @@ from test.stage_test_utils import (
     load_vector_state_config,
     save_vector_snapshot,
 )
+from test.appraisal_support import (
+    TRACE_COLUMNS,
+    appraisal_execution_context,
+    evaluate_appraisal_case,
+    parse_appraisal_judgment,
+    resolve_appraisal_inputs,
+    run_appraisal,
+)
 
 script_dir = os.path.dirname(__file__)
 configure_logging()
@@ -74,9 +82,12 @@ class AgentTest:
             "author_note": "Assess semantic agreement between the complete retrieval outcome and the author note, which defines the expected outcome. Distinguish expected retrieved facts from expected summary content when specified. If the note is missing or blank, return score 0.0, passed=false, and explain that expected-outcome alignment cannot be assessed.",
         },
         StageName.APPRAISAL: {
-            "appraisal_plausibility": "Check whether the appraisal reasonably evaluates the final perception against {character_name}'s values, goals, relationship state, and situation.",
-            "emotion_coherence": "Check whether the emotional reaction follows naturally from the appraisal and fits {character_name}.",
-            "attribution_reasonability": "Check whether the attribution source and responsibility are reasonable for the perceived event.",
+            "character_circumstance_fit": "Is the interpretation plausible for {character_name} given the supplied character definition, situation, sentiment, and relationship? Judge personal significance, not a universal stimulus-to-emotion rule.",
+            "emotional_coherence": "Does the stage output itself clearly explain or summarize {character_name}'s emotional state: what they feel, how strongly, and why the appraised situation produces that reaction? Require a concrete, context-grounded explanation consistent with the reported emotion and intensity; Penalize vague or generic explanations (for example, 'this affects me' or 'I have mixed feelings'). Explain the specific omission or vagueness in the metric feedback. Allow concise summaries, natural-language descriptions of intensity, and multiple reactions or mixed emotions when clearly explained and supported by the supplied circumstances.",
+            "goals_beliefs_alignment": "Does {character_name} evaluate consequences through his supplied goals, motivations, and beliefs, including pride and self-interest where relevant? Do not assume beliefs absent from the inputs.",
+            "grounding_attribution": "Does the appraisal use relevant supplied evidence, preserve uncertainty, avoid unsupported assumptions, and assign responsibility plausibly from {character_name}'s perspective? Distinguish his biased blame from established facts.",
+            "downstream_usefulness": "Does the appraisal output itself provide clear, coherent personal significance that could inform later stages without generating strategy or dialogue? Do not require or infer downstream execution.",
+            "scenario_expectation_alignment": "Assess semantic agreement with the author notes, including relevant evidence, acceptable emotional variation, and failure modes. Do not require exact wording. Missing expectations cannot establish alignment.",
         },
         StageName.STRATEGY: {
             "character_fit": "Check whether the strategy fits {character_name}'s personality, motives, and social behavior.",
@@ -116,7 +127,7 @@ class AgentTest:
             writer.writerows(rows)
 
     def evaluate_prompts(self, character: Character, prompts: list[StageTestPrompt]) -> None:
-        all_results: list[StageEvaluationResult] = []
+        all_results: list[Any] = []
         executed_prompts: list[dict[str, Any]] = []
 
         dataset_slug = character.name.lower() + "_stage_testsuite"
@@ -127,6 +138,13 @@ class AgentTest:
         for index, prompt in enumerate(prompts):
             if prompt.target_stage not in self.SUPPORTED_STAGES:
                 logger.warning("Skipping unsupported stage target: %s", prompt.target_stage)
+                continue
+
+            if prompt.target_stage == StageName.APPRAISAL:
+                record, results = evaluate_appraisal_case(self, character, prompt)
+                executed_prompts.append(record)
+                all_results.extend(results)
+                logger.info("Appraisal scenario %s: %s", record["scenario_id"], record["status"])
                 continue
 
             self.reset_character_state(character)
@@ -182,6 +200,9 @@ class AgentTest:
             "execution_context",
         ]
         result_columns = list(StageEvaluationResult.model_fields.keys())
+        if any(prompt.target_stage == StageName.APPRAISAL for prompt in prompts):
+            prompt_columns.extend(TRACE_COLUMNS)
+            result_columns.extend(TRACE_COLUMNS)
 
         self.export_data(executed_prompts, prompt_columns, prompts_path)
         self.export_data(all_results, result_columns, results_path)
@@ -272,16 +293,8 @@ class AgentTest:
         }
 
     def execute_appraisal_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
-        initial_context = character.build_initial_context()
-        perception = self.simulate_perception_result(character, prompt)
-        retrieved_context = self.simulate_retrieved_context_result(character, prompt)
-        appraisal, emotion = character.pipeline.appraisal_stage.run(initial_context, perception, retrieved_context)
-
-        return {"appraisal": appraisal, "emotion": emotion}, {
-            "initial_context": self.to_plain_data(initial_context),
-            "perception": self.to_plain_data(perception),
-            "retrieved_context": self.to_plain_data(retrieved_context),
-        }
+        resolved = resolve_appraisal_inputs(prompt)
+        return run_appraisal(character, resolved), appraisal_execution_context(prompt, resolved)
 
     def execute_strategy_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
         # Strategy tests are isolated: never generate missing predecessor outputs.
@@ -735,7 +748,11 @@ class AgentTest:
 
         judge_prompt = self.build_judge_prompt(character, prompt, stage_output, execution_context, active_metrics)
         raw_output = self.provider.generate(judge_prompt)
-        metric_results = self.parse_judge_output(raw_output, active_metrics)
+        metric_results = (
+            parse_appraisal_judgment(raw_output, active_metrics)
+            if prompt.target_stage == StageName.APPRAISAL
+            else self.parse_judge_output(raw_output, active_metrics)
+        )
 
         return [
             StageEvaluationResult(
@@ -751,7 +768,8 @@ class AgentTest:
                 actual_value=result.score,
                 stage_output=stage_output_json,
                 notes=prompt.notes,
-                input_context=execution_context.get("available_context", "") if prompt.target_stage == StageName.GAP_ANALYSIS else "",
+                input_context=(self.serialize_value(execution_context) if prompt.target_stage == StageName.APPRAISAL
+                               else execution_context.get("available_context", "") if prompt.target_stage == StageName.GAP_ANALYSIS else ""),
             )
             for result in metric_results
         ]
@@ -778,13 +796,12 @@ class AgentTest:
                 )
             )
 
-        return "\n".join([
-            "You are evaluating one LLM-driven NPC stage output for reasonability.",
-            "Return only valid JSON.",
-            "Score each metric from 0.0 to 1.0, where 1.0 is a perfect pass and 0.0 is a total failure.",
-            "Set passed=true when the score is at least 0.5, otherwise false.",
-            "Always include a short explanation that a human can understand.",
-            "Do not use vague explanations such as 'the interpretation is supported' or 'it passes expectations'. Pinpoint the concrete prompt phrase, output field value, character-context detail, or author-guidance detail that makes the result reasonable or unreasonable.",
+        character_context = ([
+            "Use only the resolved stage inputs below as character and event evidence.",
+            "Author notes are evaluation criteria, not additional facts available to the NPC.",
+            "Appraisal consumes retrieved_context.combined_context; the other retrieval fields are provenance only.",
+            "This evaluates parsed appraisal and emotion semantics; it does not independently verify raw output validity.",
+        ] if prompt.target_stage == StageName.APPRAISAL else [
             f"Character name: {character.name}",
             f"Character definition: {character.pl_list}",
             f"Character knowledge: {character.knowledge}",
@@ -792,11 +809,20 @@ class AgentTest:
             f"Character relations: {character.relations}",
             f"Character sentiment: {character.sentiment}",
             f"Example dialogues: {character.ali_chat}",
+        ])
+        return "\n".join([
+            "You are evaluating one LLM-driven NPC stage output for reasonability.",
+            "Return only valid JSON.",
+            "Score each metric from 0.0 to 1.0, where 1.0 is a perfect pass and 0.0 is a total failure.",
+            "Set passed=true when the score is at least 0.5, otherwise false.",
+            "Always include a short explanation that a human can understand.",
+            "Do not use vague explanations such as 'the interpretation is supported' or 'it passes expectations'. Pinpoint the concrete prompt phrase, output field value, character-context detail, or author-guidance detail that makes the result reasonable or unreasonable.",
+            *character_context,
             f"Source category: {prompt.source_category.value}",
             f"Target stage: {prompt.target_stage.value}",
             f"User query: {prompt.user_query}",
             *(["Author note (expected stage outcome):", prompt.notes.strip() or "No author note provided."]
-              if prompt.target_stage in {StageName.PERCEPTION, StageName.GAP_ANALYSIS, StageName.RETRIEVAL_RUN, StageName.STRATEGY} else []),
+              if prompt.target_stage in {StageName.PERCEPTION, StageName.GAP_ANALYSIS, StageName.RETRIEVAL_RUN, StageName.STRATEGY, StageName.APPRAISAL} else []),
             "Stage inputs and supporting context:",
             self.serialize_value(execution_context),
             "Stage output to evaluate:",
