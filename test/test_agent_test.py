@@ -125,16 +125,23 @@ class AgentTestTests(unittest.TestCase):
             expectation_mode=StageExpectationMode.DETERMINISTIC,
             stage_inputs={
                 "perception_payload": {
-                    "player_intent": "seek_information",
-                    "player_emotion": "curious",
+                    "npc_perception": {
+                        "perceived_intent": ["seek_information"],
+                        "perceived_attitude": ["curious"],
+                        "player_intent": "seek_information",
+                        "player_emotion": "curious",
+                        "threat_signal": "none",
+                        "manipulation_signal": "none",
+                        "topic_sensitivity": "normal",
+                    },
                     "request_type": "question",
-                    "topic": "market rules",
+                    "topic": {"primary": "market rules", "related": ["market rules"], "retrieval_queries": ["market rules"]},
                 }
             },
             deterministic_checks=[
                 {
                     "metric_name": "topic_is_market_rules",
-                    "path": "execution_context.perception.topic",
+                    "path": "execution_context.perception.topic.primary",
                     "operator": "equals",
                     "value": "market rules",
                 }
@@ -155,10 +162,10 @@ class AgentTestTests(unittest.TestCase):
 
     def test_parse_judge_output_normalizes_zero_to_one_scores(self):
         agent_test = AgentTest()
-        metrics = [StageJudgeMetric(metric_name="field_validity")]
+        metrics = [StageJudgeMetric(metric_name="schema_compliance")]
 
         results = agent_test.parse_judge_output(
-            '{"metrics":[{"metric_name":"field_validity","score":0.75,"passed":true,"explanation":"Strong match."}]}',
+            '{"metrics":[{"metric_name":"schema_compliance","score":0.75,"passed":true,"explanation":"Strong match."}]}',
             metrics,
         )
 
@@ -200,22 +207,25 @@ class AgentTestTests(unittest.TestCase):
             target_stage=StageName.GAP_ANALYSIS,
             expectation_mode=StageExpectationMode.JUDGE,
             stage_inputs={"perception_payload": {
-                "player_intent": "seek_information",
-                "player_emotion": "curious",
+                "npc_perception": {
+                    "perceived_intent": ["seek_information"],
+                    "perceived_attitude": ["curious"],
+                    "player_intent": "seek_information",
+                    "player_emotion": "curious",
+                    "threat_signal": "none",
+                    "manipulation_signal": "none",
+                    "topic_sensitivity": "normal",
+                },
                 "request_type": "question",
-                "topic": "market rules",
-                "is_ambiguous": False,
-                "threat_signal": "none",
-                "manipulation_signal": "none",
-                "topic_sensitivity": "normal",
+                "topic": {"primary": "market rules", "related": ["market rules"], "retrieval_queries": ["market rules"]},
             }},
         )
 
         result, execution_context = agent_test.execute_gap_analysis_stage(character, prompt)
 
         self.assertEqual(result.tool_calls, [])
-        self.assertEqual(character.pipeline.gap_analysis_stage.last_perception.player_intent, "seek_information")
-        self.assertEqual(execution_context["perception"]["topic"], "market rules")
+        self.assertEqual(character.pipeline.gap_analysis_stage.last_perception.npc_perception.player_intent, "seek_information")
+        self.assertEqual(execution_context["perception"]["topic"]["primary"], "market rules")
 
     def test_response_stage_uses_simulated_predecessor_outputs(self):
         character = FakeCharacter()
@@ -227,14 +237,17 @@ class AgentTestTests(unittest.TestCase):
             expectation_mode=StageExpectationMode.JUDGE,
             stage_inputs={
                 "perception_payload": {
-                "player_intent": "buy_goods",
-                "player_emotion": "curious",
-                "request_type": "question",
-                "topic": "wares",
-                "is_ambiguous": False,
-                "threat_signal": "none",
-                "manipulation_signal": "none",
-                "topic_sensitivity": "normal",
+                    "npc_perception": {
+                        "perceived_intent": ["buy_goods"],
+                        "perceived_attitude": ["curious"],
+                        "player_intent": "buy_goods",
+                        "player_emotion": "curious",
+                        "threat_signal": "none",
+                        "manipulation_signal": "none",
+                        "topic_sensitivity": "normal",
+                    },
+                    "request_type": "question",
+                    "topic": {"primary": "wares", "related": ["herbs", "travel supplies"], "retrieval_queries": ["wares for sale"]},
                 },
                 "gap_analysis_payload": {
                     "tool_calls": [
@@ -272,7 +285,7 @@ class AgentTestTests(unittest.TestCase):
 
         self.assertTrue(character.initialized)
         self.assertEqual(result.reply, "simulated reply")
-        self.assertEqual(perception.player_intent, "buy_goods")
+        self.assertEqual(perception.npc_perception.player_intent, "buy_goods")
         self.assertEqual(retrieved_context.combined_context, "Mira sells herbs and travel supplies.")
         self.assertEqual(appraisal.summary, "Mildly positive trade opportunity.")
         self.assertEqual(emotion.primary, "interest")
@@ -289,10 +302,17 @@ class AgentTestTests(unittest.TestCase):
             expectation_mode=StageExpectationMode.JUDGE,
             stage_inputs={
                 "perception_prompt": json.dumps({
-                    "player_intent": "buy_goods",
-                    "player_emotion": "curious",
+                    "npc_perception": {
+                        "perceived_intent": ["buy_goods"],
+                        "perceived_attitude": ["curious"],
+                        "player_intent": "buy_goods",
+                        "player_emotion": "curious",
+                        "threat_signal": "none",
+                        "manipulation_signal": "none",
+                        "topic_sensitivity": "normal",
+                    },
                     "request_type": "question",
-                    "topic": "wares",
+                    "topic": {"primary": "wares", "related": ["herbs"], "retrieval_queries": ["wares for sale"]},
                 }),
                 "gap_analysis_prompt": json.dumps({
                     "tool_calls": [
@@ -315,7 +335,7 @@ class AgentTestTests(unittest.TestCase):
 
         _, execution_context = agent_test.execute_response_stage(character, prompt)
 
-        self.assertEqual(execution_context["perception"]["player_intent"], "buy_goods")
+        self.assertEqual(execution_context["perception"]["npc_perception"]["player_intent"], "buy_goods")
         self.assertEqual(execution_context["retrieved_context"]["knowledge_context"], "Mira sells herbs and travel supplies.")
         self.assertEqual(execution_context["strategy"]["conversation_goal"], "invite trade")
         self.assertEqual(execution_context["gap_analysis"]["tool_calls"][0]["function"]["arguments"]["reasoning"], "debug only")
@@ -327,6 +347,69 @@ class AgentTestTests(unittest.TestCase):
             "knowledge_scope_alignment",
             agent_test.STAGE_METRIC_GUIDANCE[StageName.RETRIEVAL_RUN],
         )
+
+    def test_perception_judge_prompt_uses_produced_output_schema(self):
+        agent_test = AgentTest()
+        prompt = StageTestPrompt(
+            user_query="What about that thing?",
+            source_category=PromptCategory.GENERAL,
+            target_stage=StageName.PERCEPTION,
+            expectation_mode=StageExpectationMode.JUDGE,
+            judge_metrics=[StageJudgeMetric(metric_name="schema_compliance")],
+            notes="Author expects ambiguous reference handling.",
+        )
+        stage_output = {
+            "summary": "The player makes an ambiguous reference.",
+            "npc_perception": {
+                "perceived_intent": ["ask_followup"],
+                "perceived_attitude": ["unclear"],
+                "player_intent": "ask_followup",
+                "player_emotion": "neutral",
+                "threat_signal": "none",
+                "manipulation_signal": "none",
+                "topic_sensitivity": "normal",
+            },
+            "request_type": "question",
+            "topic": {"primary": "", "related": [], "retrieval_queries": []},
+            "stage_prompt": "runtime prompt",
+            "tool_calls": [],
+            "retrieval_reasoning": "",
+        }
+
+        judge_prompt = agent_test.build_judge_prompt(
+            character=FakeCharacter(),
+            prompt=prompt,
+            stage_output=stage_output,
+            execution_context={},
+            active_metrics=prompt.judge_metrics,
+        )
+
+        self.assertIn("summary: string", judge_prompt)
+        self.assertIn("npc_perception.perceived_intent: list[string]", judge_prompt)
+        self.assertIn("npc_perception.player_intent: string", judge_prompt)
+        self.assertIn("topic.primary: string", judge_prompt)
+        self.assertIn("Do not expect or judge confidence, is_ambiguous, target", judge_prompt)
+        self.assertIn("Author guidance:\nAuthor expects ambiguous reference handling.", judge_prompt)
+        self.assertIn("Do not judge raw_prompt, stage_prompt, tool_calls, or retrieval_reasoning", judge_prompt)
+        self.assertIn("Pinpoint the concrete prompt phrase", judge_prompt)
+
+    def test_perception_metric_guidance_uses_redesigned_metrics(self):
+        guidance = AgentTest.STAGE_METRIC_GUIDANCE[StageName.PERCEPTION]
+
+        self.assertEqual(
+            set(guidance),
+            {
+                "schema_compliance",
+                "prompt_grounding",
+                "character_context_fit",
+                "author_note_alignment",
+                "intent_topic_quality",
+                "topic_retrieval_quality",
+                "attitude_emotion_quality",
+                "risk_signal_quality",
+            },
+        )
+        self.assertIn("author guidance", guidance["author_note_alignment"])
 
 
 if __name__ == "__main__":

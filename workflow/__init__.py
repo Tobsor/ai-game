@@ -2,6 +2,8 @@ from workflow.pipeline import TurnPipeline
 from workflow.models import (
     TurnInput,
     InitialContext,
+    NPCPerception,
+    PerceptionTopic,
     PerceptionResult,
     GapAnalysisResult,
     RetrievedContext,
@@ -17,6 +19,8 @@ __all__ = [
     "TurnPipeline",
     "TurnInput",
     "InitialContext",
+    "NPCPerception",
+    "PerceptionTopic",
     "PerceptionResult",
     "GapAnalysisResult",
     "RetrievedContext",

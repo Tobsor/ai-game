@@ -1,5 +1,5 @@
 from logger import get_logger
-from workflow.models import InitialContext, PerceptionResult, RetrievedContext, TurnInput
+from workflow.models import InitialContext, NPCPerception, PerceptionResult, PerceptionTopic, RetrievedContext, TurnInput
 from workflow.stages.base import LLMStage
 from workflow.stages.prompting import format_prompt
 
@@ -34,18 +34,18 @@ class PerceptionStage(LLMStage):
                 (
                     "Decision rubric",
                     "\n".join([
-                        "Analyze the player's message and infer player_intent as a concise description of what the player is trying to achieve, or unknown if it cannot be determined.",
+                        "Analyze the player's message and infer npc_perception.player_intent as a concise description of what the player is trying to achieve, or unknown if it cannot be determined.",
                         "Summarize what the NPC subjectively believes is happening in summary.",
-                        "Represent perceived_intent, perceived_attitude, relevant_topics, and target as compact arrays of labels.",
-                        "Set confidence from 0.0 to 1.0 based on how strongly the NPC can support this interpretation from the available stimulus and context.",
-                        "Analyze the player's message and infer player_emotion, defaulting to neutral when no strong emotional signal is present.",
+                        "Represent npc_perception.perceived_intent and npc_perception.perceived_attitude as compact arrays of labels.",
+                        "Analyze the player's message and infer npc_perception.player_emotion, defaulting to neutral when no strong emotional signal is present.",
                         "Classify request_type with a concise category such as general, question, demand, negotiation, threat, social bid, or similar.",
-                        "Summarize the main subject of the player's message in topic.",
-                        "Set is_ambiguous to true only when the player's message is too unclear, underspecified, or contradictory for a confident interpretation.",
-                        "Set threat_signal to none unless the player expresses hostility, danger, intimidation, coercion, or violent intent.",
-                        "Set manipulation_signal to none unless the player appears deceptive, coercive, flattering strategically, guilt-inducing, or otherwise manipulative.",
-                        "Set topic_sensitivity to normal unless the topic is sensitive, secret, risky, personal, or delicate for this NPC.",
-                        "Return strictly valid JSON with exactly these fields: summary, perceived_intent, perceived_attitude, relevant_topics, target, confidence, player_intent, player_emotion, request_type, topic, is_ambiguous, threat_signal, manipulation_signal, topic_sensitivity.",
+                        "Group all theme and retrieval cues in topic. Use topic.primary for the main subject, topic.related for compact related topic labels, and topic.retrieval_queries for concrete retrieval queries that could help later stages.",
+                        "Set npc_perception.threat_signal to none unless the player expresses hostility, danger, intimidation, coercion, or violent intent.",
+                        "Set npc_perception.manipulation_signal to none unless the player appears deceptive, coercive, flattering strategically, guilt-inducing, or otherwise manipulative.",
+                        "Set npc_perception.topic_sensitivity to normal unless the topic is sensitive, secret, risky, personal, or delicate for this NPC.",
+                        "Return strictly valid JSON with exactly these top-level fields: summary, npc_perception, topic, request_type.",
+                        'The npc_perception object must contain: perceived_intent, perceived_attitude, threat_signal, manipulation_signal, topic_sensitivity, player_intent, player_emotion.',
+                        'The topic object must contain: primary, related, retrieval_queries.',
                         'Do not return markdown, prose, explanations, or code fences. Output only the JSON object.',
                     ]),
                 ),
@@ -77,23 +77,22 @@ class PerceptionStage(LLMStage):
         )
         parsed_response = self.character.agent.parse_output(response.content, fallback={})
 
+        npc_perception_payload = self.detect_npc_perception_payload(parsed_response)
         return PerceptionResult(
             raw_prompt=turn_input.prompt,
             stage_prompt=stage_prompt,
             summary=self.detect_summary(parsed_response),
-            perceived_intent=self.detect_string_list(parsed_response, "perceived_intent"),
-            perceived_attitude=self.detect_string_list(parsed_response, "perceived_attitude"),
-            relevant_topics=self.detect_string_list(parsed_response, "relevant_topics"),
-            target=self.detect_string_list(parsed_response, "target"),
-            confidence=self.detect_float(parsed_response, "confidence", 0.0, 0.0, 1.0),
-            player_intent=self.detect_player_intent(parsed_response),
-            player_emotion=self.detect_player_emotion(parsed_response),
+            npc_perception=NPCPerception(
+                perceived_intent=self.detect_string_list(npc_perception_payload, "perceived_intent"),
+                perceived_attitude=self.detect_string_list(npc_perception_payload, "perceived_attitude"),
+                player_intent=self.detect_player_intent(npc_perception_payload),
+                player_emotion=self.detect_player_emotion(npc_perception_payload),
+                threat_signal=self.detect_threat_signal(npc_perception_payload),
+                manipulation_signal=self.detect_manipulation_signal(npc_perception_payload),
+                topic_sensitivity=self.detect_topic_sensitivity(npc_perception_payload),
+            ),
             request_type=self.detect_request_type(parsed_response),
             topic=self.detect_topic(parsed_response),
-            is_ambiguous=self.detect_ambiguity(parsed_response),
-            threat_signal=self.detect_threat_signal(parsed_response),
-            manipulation_signal=self.detect_manipulation_signal(parsed_response),
-            topic_sensitivity=self.detect_topic_sensitivity(parsed_response),
             tool_calls=[],
             retrieval_reasoning="",
         )
@@ -102,25 +101,22 @@ class PerceptionStage(LLMStage):
         value = parsed_response.get("summary")
         if isinstance(value, str) and value.strip() != "":
             return value.strip()
-        intent = self.detect_player_intent(parsed_response)
-        topic = self.detect_topic(parsed_response)
+        npc_perception_payload = self.detect_npc_perception_payload(parsed_response)
+        intent = self.detect_player_intent(npc_perception_payload)
+        topic = self.detect_topic(parsed_response).primary
         if topic != "":
             return f"{intent} about {topic}"
         return intent
+
+    def detect_npc_perception_payload(self, parsed_response: dict) -> dict:
+        value = parsed_response.get("npc_perception")
+        return value if isinstance(value, dict) else {}
 
     def detect_string_list(self, parsed_response: dict, key: str) -> list[str]:
         value = parsed_response.get(key)
         if not isinstance(value, list):
             return []
         return [str(item).strip() for item in value if str(item).strip() != ""]
-
-    def detect_float(self, parsed_response: dict, key: str, default: float, minimum: float, maximum: float) -> float:
-        value = parsed_response.get(key, default)
-        try:
-            parsed = float(value)
-        except (TypeError, ValueError):
-            parsed = default
-        return max(minimum, min(maximum, parsed))
 
     def detect_player_intent(self, parsed_response: dict) -> str:
         value = parsed_response.get("player_intent")
@@ -134,13 +130,18 @@ class PerceptionStage(LLMStage):
         value = parsed_response.get("request_type")
         return str(value) if isinstance(value, str) and value.strip() != "" else "general"
 
-    def detect_topic(self, parsed_response: dict) -> str:
+    def detect_topic(self, parsed_response: dict) -> PerceptionTopic:
         value = parsed_response.get("topic")
-        return str(value) if isinstance(value, str) else ""
+        if isinstance(value, dict):
+            return PerceptionTopic(
+                primary=self.detect_topic_value(value.get("primary")),
+                related=self.detect_string_list(value, "related"),
+                retrieval_queries=self.detect_string_list(value, "retrieval_queries"),
+            )
+        return PerceptionTopic()
 
-    def detect_ambiguity(self, parsed_response: dict) -> bool:
-        value = parsed_response.get("is_ambiguous")
-        return value if isinstance(value, bool) else False
+    def detect_topic_value(self, value: object) -> str:
+        return str(value).strip() if isinstance(value, str) and value.strip() != "" else ""
 
     def detect_threat_signal(self, parsed_response: dict) -> str:
         value = parsed_response.get("threat_signal")

@@ -12,7 +12,7 @@ class RetrievalStage(LLMStage):
             "Gather the contextual knowledge the NPC should consult before composing a reply by executing the retrieval-oriented decisions produced during gap analysis.",
             [
                 ("Player input", perception.raw_prompt),
-                ("Perception summary", f"intent={perception.player_intent}, request_type={perception.request_type}, topic={perception.topic}"),
+                ("Perception summary", f"intent={perception.npc_perception.player_intent}, request_type={perception.request_type}, topic={perception.topic.primary}"),
                 ("Gap-analysis tool calls", str([tool_call.function.arguments for tool_call in gap_analysis.tool_calls])),
                 ("Expected result", "The retrieved context needed for the NPC's response."),
             ],
@@ -119,8 +119,10 @@ class RetrievalStage(LLMStage):
         return "\n".join([
             instruction,
             f"Player input: {perception.raw_prompt}",
-            f"Perceived intent: {perception.player_intent}",
-            f"Perceived topic: {perception.topic}",
+            f"Perceived intent: {perception.npc_perception.player_intent}",
+            f"Perceived topic: {perception.topic.primary}",
+            f"Related topics: {', '.join(perception.topic.related)}",
+            f"Retrieval queries: {', '.join(perception.topic.retrieval_queries)}",
             f"Retrieval reason: {reasoning if reasoning != '' else 'not provided'}",
             "Return only the retrieved context as plain text.",
         ])
@@ -133,8 +135,9 @@ class RetrievalStage(LLMStage):
             "Do not invent facts, explanations, or links that are not explicitly supported by the retrieved context.",
             "If nothing in the retrieved context is evidently relevant, return exactly: no information",
             f"Player input: {perception.raw_prompt}",
-            f"Perceived intent: {perception.player_intent}",
-            f"Perceived topic: {perception.topic}",
+            f"Perceived intent: {perception.npc_perception.player_intent}",
+            f"Perceived topic: {perception.topic.primary}",
+            f"Related topics: {', '.join(perception.topic.related)}",
             "Retrieved context:",
             raw_context,
             "Return only the concise summarized context as plain text.",

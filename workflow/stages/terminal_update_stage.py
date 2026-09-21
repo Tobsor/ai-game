@@ -192,7 +192,7 @@ class TerminalUpdateStage(LLMStage):
     ) -> list[str]:
         return self.combine_tags(
             ["sentiment"],
-            [strategy.new_sentiment or "", initial_context.sentiment, perception.player_emotion],
+            [strategy.new_sentiment or "", initial_context.sentiment, perception.npc_perception.player_emotion],
             self.build_perception_tags(perception),
             self.build_appraisal_tags(appraisal),
             self.build_emotion_tags(emotion),
@@ -218,13 +218,13 @@ class TerminalUpdateStage(LLMStage):
     def build_perception_tags(self, perception: PerceptionResult) -> list[str]:
         return self.combine_tags([
             perception.request_type,
-            perception.player_intent,
-            perception.player_emotion,
-            perception.topic,
-            "ambiguous" if perception.is_ambiguous else "",
-            perception.threat_signal if perception.threat_signal != "none" else "",
-            perception.manipulation_signal if perception.manipulation_signal != "none" else "",
-            perception.topic_sensitivity if perception.topic_sensitivity != "normal" else "",
+            perception.npc_perception.player_intent,
+            perception.npc_perception.player_emotion,
+            perception.topic.primary,
+            *perception.topic.related,
+            perception.npc_perception.threat_signal if perception.npc_perception.threat_signal != "none" else "",
+            perception.npc_perception.manipulation_signal if perception.npc_perception.manipulation_signal != "none" else "",
+            perception.npc_perception.topic_sensitivity if perception.npc_perception.topic_sensitivity != "normal" else "",
         ])
 
     def build_retrieved_context_tags(self, retrieved_context: RetrievedContext) -> list[str]:
