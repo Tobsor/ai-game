@@ -2,9 +2,10 @@ import csv
 import json
 import os
 import re
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, fields, is_dataclass
 from pathlib import Path
 from typing import Any, Sequence
+from pydantic import TypeAdapter
 
 from ai import (
     AISettings,
@@ -25,7 +26,7 @@ from models import (
     StageName,
     StageTestPrompt,
 )
-from workflow.models import AppraisalResult, EmotionResult, GapAnalysisResult, NPCPerception, PerceptionResult, PerceptionTopic, RetrievedContext, StrategyResult, TurnInput
+from workflow.models import AppraisalResult, EmotionResult, GapAnalysisResult, InitialContext, NPCPerception, PerceptionResult, PerceptionTopic, RetrievedContext, StrategyResult, TurnInput
 from test.stage_test_utils import (
     extend_vector_state_from_config,
     load_vector_state_config,
@@ -79,10 +80,11 @@ class AgentTest:
         },
         StageName.STRATEGY: {
             "character_fit": "Check whether the strategy fits {character_name}'s personality, motives, and social behavior.",
-            "safety_appropriateness": "Check whether the strategy handles dangerous, abusive, or manipulative prompts in a reasonable way.",
-            "action_plausibility": "Check whether any immediate actions are plausible and support the chosen strategy.",
-            "goal_coherence": "Check whether intention, goal, tone, and conversation move fit together coherently.",
-            "disclosure_tone_fit": "Check whether disclosure level and tone suit {character_name} and the situation.",
+            "context_awareness": "Check whether the strategy respects supplied perception, appraisal, emotion, relationship, recent turns, situation and retrieved facts, including uncertainty. Do not redo earlier stages or require final dialogue.",
+            "goal_coherence": "Check whether the immediate intention and conversational goal advance the NPC's supplied persistent goals and motives, and whether tone, disclosure and conversation move support that intention. Allow plausible tradeoffs between pride, food, money and self-preservation.",
+            "immediate_actions_valid": "Check whether immediate actions are feasible and proportionate in the supplied fictional context. Deception and aggression may be authentic; do not reward universal cooperation. Distinguish selecting an action from successfully completing it; action tools may be stubs. No special action is valid when none is needed.",
+            "action_strategy_alignment": "Check whether the immediate actions support the chosen strategy without contradicting it. A threat does not require an attack, a proposed bargain does not imply completed payment, and continuing after an insult can be authentic.",
+            "author_note": "Compare the complete strategy and immediate actions with the author note's expected outcome, including allowed and forbidden outcomes. Score semantic agreement, not exact wording. Apply these scenario-specific restrictions only to this metric; character authenticity and other metrics must be assessed independently. If the note is missing, return score 0.0, passed=false and explain that the expected outcome is missing.",
         },
         StageName.RESPONSE: {
             "character_consistency": "Check whether the reply matches {character_name}'s persona, motives, and social behavior.",
@@ -282,16 +284,36 @@ class AgentTest:
         }
 
     def execute_strategy_stage(self, character: Character, prompt: StageTestPrompt) -> tuple[Any, dict[str, Any]]:
-        initial_context = character.build_initial_context()
-        perception = self.simulate_perception_result(character, prompt)
-        gap_analysis = self.simulate_gap_analysis_result(character, prompt)
-        retrieved_context = self.simulate_retrieved_context_result(character, prompt)
-        appraisal, emotion = self.simulate_appraisal_emotion_result(character, prompt)
+        # Strategy tests are isolated: never generate missing predecessor outputs.
+        fixture_types = {
+            "initial_context": InitialContext,
+            "perception": PerceptionResult,
+            "retrieved_context": RetrievedContext,
+            "appraisal": AppraisalResult,
+            "emotion": EmotionResult,
+        }
+        fixtures = {}
+        for name, fixture_type in fixture_types.items():
+            payload = prompt.stage_inputs.get(name + "_payload")
+            if not isinstance(payload, dict) or (not payload and name != "retrieved_context"):
+                raise ValueError(f"Strategy tests require an explicit {name}_payload object.")
+            payload = dict(payload)
+            unknown = set(payload) - {field.name for field in fields(fixture_type)}
+            if unknown:
+                raise ValueError(f"Unknown {name}_payload fields: {', '.join(sorted(unknown))}")
+            if name == "perception":
+                payload["raw_prompt"] = prompt.user_query
+            fixtures[name] = TypeAdapter(fixture_type).validate_python(payload)
+        initial_context = fixtures["initial_context"]
+        if initial_context.character_name != character.name:
+            raise ValueError("Strategy fixture character_name must match the selected character.")
+        perception = fixtures["perception"]
+        retrieved_context = fixtures["retrieved_context"]
+        appraisal, emotion = fixtures["appraisal"], fixtures["emotion"]
         strategy = character.pipeline.strategy_stage.run(initial_context, perception, retrieved_context, appraisal, emotion)
         return strategy, {
             "initial_context": self.to_plain_data(initial_context),
             "perception": self.to_plain_data(perception),
-            "gap_analysis": self.to_plain_data(gap_analysis),
             "retrieved_context": self.to_plain_data(retrieved_context),
             "appraisal": self.to_plain_data(appraisal),
             "emotion": self.to_plain_data(emotion),
@@ -774,7 +796,7 @@ class AgentTest:
             f"Target stage: {prompt.target_stage.value}",
             f"User query: {prompt.user_query}",
             *(["Author note (expected stage outcome):", prompt.notes.strip() or "No author note provided."]
-              if prompt.target_stage in {StageName.PERCEPTION, StageName.GAP_ANALYSIS, StageName.RETRIEVAL_RUN} else []),
+              if prompt.target_stage in {StageName.PERCEPTION, StageName.GAP_ANALYSIS, StageName.RETRIEVAL_RUN, StageName.STRATEGY} else []),
             "Stage inputs and supporting context:",
             self.serialize_value(execution_context),
             "Stage output to evaluate:",

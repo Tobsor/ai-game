@@ -31,6 +31,9 @@ class StrategyStage(LLMStage):
             "Choose the NPC's high-level response strategy based on final perception, appraisal, emotional reaction, and context. Do not redo perception, appraisal, or emotion.",
             [
                 ("Player input", perception.raw_prompt),
+                ("Character definition", initial_context.character_definition),
+                ("Situation", initial_context.situation),
+                ("Belief state", "\n".join(initial_context.belief_state)),
                 (
                     "Compact final perception",
                     "\n".join([
@@ -126,6 +129,9 @@ class StrategyStage(LLMStage):
                 self.open_trade,
                 self.offer_quest,
                 self.alert_guards,
+                self.attack_player,
+                self.flee,
+                self.call_for_help,
             ],
             stage_name="StrategyStage",
             payload={
@@ -155,6 +161,8 @@ class StrategyStage(LLMStage):
                 immediate_actions.append("offer_quest")
             elif tool == "alert_guards":
                 immediate_actions.append("alert_guards")
+            elif tool in {"attack_player", "flee", "call_for_help"}:
+                immediate_actions.append(tool)
 
         if len(immediate_actions) == 0:
             immediate_actions.append("keep_talking")
@@ -187,3 +195,18 @@ class StrategyStage(LLMStage):
 
     def alert_guards(self, reasoning: str) -> dict[str, str]:
         return {"action": "alert_guards", "reasoning": reasoning}
+
+    def attack_player(self, reasoning: str) -> dict[str, str]:
+        """Choose an immediate physical attack against the player."""
+        # TODO: Integrate combat execution; this currently records intent only.
+        return {"action": "attack_player", "reasoning": reasoning}
+
+    def flee(self, reasoning: str) -> dict[str, str]:
+        """Choose to escape the current encounter."""
+        # TODO: Integrate movement and encounter termination.
+        return {"action": "flee", "reasoning": reasoning}
+
+    def call_for_help(self, reasoning: str) -> dict[str, str]:
+        """Call nearby people for immediate assistance."""
+        # TODO: Integrate nearby NPC reactions; assistance is not guaranteed.
+        return {"action": "call_for_help", "reasoning": reasoning}
