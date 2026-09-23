@@ -3,7 +3,7 @@ This repo implements an **NPC roleplay/chat agent** that:
 - Retrieves **context** from a Chroma-backed knowledge store (mini RAG)
 - Generates a final NPC response via a text generation backend (`ChromaDBHelper.generate_text`)
 
-The core flow lives in `Character.prompt()` and `Character.initiate_conversion()`.
+The core flow lives in `Character.prompt()` and `Character.initiate_conversation()`.
 
 ---
 
@@ -24,11 +24,17 @@ Use the repository layout as the primary mental model:
     - faction information
   - This data is used to build and operate the **mini RAG** as the knowledge retrieval strategy.
 
+- `/workflow`
+  - Contains all script related to the internal thinking workflow of the NPC for the answer computation
+    - `/pipeline.py`: The orchestrator defining the sequential process of all relevant stages
+    - `/stages/*`: All stages as self contained python classes
+
 - `/test`
   - Test files that attempt to verify the **quality of NPC roleplaying**.
-  - Includes both:
-    - automated verification via an AI-judge model
-    - classic unit tests
+  - Includes automated verification via an AI-judge model
+
+- `/ai`
+  - Contains operability code for LLM Provider and adapters
 
 ## Top-level scripts (entrypoints and data pipelines)
 - `add_character_embeddings.py`
@@ -55,16 +61,29 @@ The rough process looks like this:
 1. **User selects a character** to talk to (selection menu / entry script).
 2. **NPC starts with a greeting**.
 3. **User prompts the NPC freely** (no strict format required).
-4. **NPC computes an answer**, typically involving:
-   
-   4.1 **Internal response formation**: emotional reaction, possible intentions, behavioral effects, etc.  
-   4.2 **Knowledge recall / retrieval**: the character may need information (knowledge, lore, memories).  
-   4.3 **Final response generation**: given the full context from 4.1 and 4.2, the LLM generates the response text.
+4. **NPC computes an answer**
 5. **NPC decides whether to continue** the conversation.
-   - If yes: repeat from step 3.
-   - If no: the script ends.
 
 ---
+
+# Answer computation in detail
+The NPC runs a specific routine to simulate thinking and decision process to generate an authentic answer (#4 in General NPC conversation loop).
+
+1. Initial Context (`/workflow/stages/initial_context_stage.py`): Loads all relevant context data in preparation of the NPC simulation. This includes static data (e.g. pl_list, ali_chat examples) as well as dynamic data (relationship data, recent conversation history). This stage operates unrelated to the incoming player input.
+
+2. Perception Stage (`/workflow/stages/perception_stage.py`): LLM based stage that analyzes the player input against perceived reaction of the character given its context / profile data. This stage features a reinterpretatin workflow. If the Gap Analysis Stage would yield new information that could influence the perception of an NPC towards the input prompt, the perception should be revised and reinterpreted.
+
+3. Gap Analysis Stage (`/workflow/stages/gap_analysis_stage.py`): LLM based stage that analyses the current context including the perception output. It should evaluate if the context is sufficient or if it is necessary to fetch vector store information (especially considering knowledge / lore / memory knowledge).
+
+4. Retrieval Stage (`/workflow/stages/retrieval_stage.py`): The complementary stage for the Gap analysis stage. According to the decisions of the Gap analysis stage, the retrieval stage is instructed to retrieve data from the vector store and summarize it for the downstream processing.
+
+5. Appraisal Stage (`/workflow/stages/appraisal_stage.py`): A LLM based stage that evaluates given the input prompt, the character profile and the aggregated context, what the input means to the NPC. It should evaluate which topics the input prompt touches and how important they are to the NPC, so that a authentic reaction can be generated. It should also evaluate which emotional state the NPC is expected to have.
+
+6. Strategy Stage (`/workflow/stages/strategy_stage.py`): A LLM based stage, that consumes the character profile, the appraisal output and the rest of the aggregated context, to compute a conversational strategy which the NPC follows to satisfy his needs / goals in this conversation with the player. Not only should it produce a conversational strategy, but it should also evaluate the real world actions that the NPC might perform as a response to the player input.
+
+7. Response Stage (`/workflow/stages/response_stage.py`): A LLM based stage which consumes every available context and produces a verbal response of the NPC. It is therefore only an executive stage which realizes the selected strategy without revisiting upstream decisions.
+
+8. Terminal Update Stage (`/workflow/stages/terminal_update_stage.py`): A closure stage, post conversation turn relevant information gets persisted in the vector store. This might be updated memory, conversation history, sentiment changes, etc.
 
 # Knowledge Retrieval Rules (Chroma Metadata Filters)
 
@@ -83,18 +102,17 @@ The greeting prompt should:
 - Instruct the model to initiate the interaction in-character
 
 ## Answer prompt
-The answer prompt should:
-- Include situation and a “General context” section (retrieved from Chroma)
-- Enforce:
-  - first-person RP
-  - include non-verbal actions as `*...*`
-  - do not reveal NPC thoughts
-  - output only dialogue-perceivable content
+The answer prompt should enforce:
+- first-person RP
+- include non-verbal actions as `*...*`
+- do not reveal NPC thoughts
+- output only dialogue-perceivable content
 
 When editing prompt text:
 - Keep instructions explicit and near the bottom
 - Avoid ambiguous constraints like “be concise” unless required
 - Prefer stable headings because retrieval quality tends to benefit from consistent structure
+- Be concise, prefer short and pointed instructions over descriptive and detailed instructions.
 
 ---
 
@@ -104,18 +122,16 @@ If/when you add new “agent behaviors” (even if not formalized as tools yet),
 
 - Validate model outputs defensively (LLM-driven inputs can be malformed)
 - Prefer small, reversible changes (agent behavior is prompt-sensitive)
-- Keep behavior-related orchestration inside `/classes`, not in entry scripts
 
 ---
 
 # What Codex Should Do in This Repo
 
 When making changes, Codex should:
-1. Preserve the existing high-level flow (selection → greeting → user prompt → context/reasoning → response → continue/stop)
+1. Preserve the existing high-level flow (See Answer computation in detail)
 2. Keep RP constraints intact (first-person, `*...*`, no hidden thoughts)
-3. Avoid large refactors unless explicitly requested (the system is prompt-sensitive)
+3. Avoid large refactors unless explicitly requested
 4. Prefer improving clarity/robustness of retrieval filters/tags rather than inventing parallel retrieval systems
-5. Add minimal tests where feasible, especially around retrieval filter building and prompt formatting
 
 If asked to implement new agent behaviors:
 - Prefer extending behavior in `/classes` close to where prompts and retrieval are orchestrated
@@ -125,7 +141,6 @@ If asked to implement new agent behaviors:
 - Do preserve prompt section headings and ordering unless explicitly asked.
 - Do keep RP rules explicit and near the bottom of prompt templates.
 - Do edit behavior in `/classes` and keep entry scripts thin.
-- Do add or update tests in `/test` when prompt or retrieval logic changes.
 - Do prefer small, reversible changes; describe intent in code comments only when needed.
 - Do always ask for additional approval in cases an action would be advisable but contradict the rules stated in the file.
 
@@ -136,3 +151,4 @@ If asked to implement new agent behaviors:
 - Don’t refactor entry scripts into orchestration logic.
 - Don’t add external dependencies or network calls without approval.
 - Don't change system prompt snippets without approval or explicitly instructed to do so.
+- Don't add unit testing.
