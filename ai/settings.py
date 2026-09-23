@@ -15,6 +15,12 @@ class RoleProviderConfig:
     base_url: str = ""
     api_key_env: str = ""
     timeout_seconds: int = 60
+    # Hugging Face invocation; omitted settings use plain text generation.
+    chat_mode: str = "text_generation"
+
+    def __post_init__(self) -> None:
+        if self.chat_mode not in {"text_generation", "chat_completion"}:
+            raise ValueError(f"Unsupported chat_mode '{self.chat_mode}'")
 
 
 @dataclass(frozen=True)
@@ -66,6 +72,7 @@ BUILT_IN_PROFILES: dict[str, AISettings] = {
         decision_llm=RoleProviderConfig(
             provider="huggingface",
             model="Qwen/Qwen3-4B-Instruct-2507:nscale",
+            chat_mode="chat_completion",
             hf_provider="hf-inference",
             api_key_env="HF_TOKEN",
             base_url="https://router.huggingface.co/v1"
@@ -73,12 +80,14 @@ BUILT_IN_PROFILES: dict[str, AISettings] = {
         response_llm=RoleProviderConfig(
             provider="huggingface",
             model="Gryphe/MythoMax-L2-13b",
+            chat_mode="chat_completion",
             hf_provider="featherless-ai",
             api_key_env="HF_TOKEN",
         ),
         judge_llm=RoleProviderConfig(
             provider="huggingface",
             model="Qwen/Qwen3-4B-Instruct-2507:nscale",
+            chat_mode="chat_completion",
             hf_provider="hf-inference",
             api_key_env="HF_TOKEN",
             base_url="https://router.huggingface.co/v1"
@@ -177,6 +186,7 @@ def _override_role(prefix: str, config: RoleProviderConfig) -> RoleProviderConfi
         base_url=base_url,
         api_key_env=api_key_env,
         timeout_seconds=timeout_seconds,
+        chat_mode=config.chat_mode,
     )
 
 

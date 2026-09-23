@@ -285,7 +285,7 @@ class HuggingFaceInferenceProviderBase:
 
 class HuggingFaceChatProvider(HuggingFaceInferenceProviderBase):
     def chat(self, messages: list[dict[str, Any]], tools: list[Any] | None = None) -> ChatCompletionResult:
-        if self.config.hf_provider == "featherless-ai":
+        if self.config.chat_mode == "text_generation":
             prompt = _flatten_messages_to_prompt(messages)
             result = self._text_generation_with_raw_response_logging(prompt)
             content = result if isinstance(result, str) else str(result)
@@ -353,15 +353,13 @@ class HuggingFaceEmbeddingProvider(HuggingFaceInferenceProviderBase):
         return [_coerce_embedding_payload(embedding)]
 
 
-class HuggingFaceTextGenerationProvider(HuggingFaceInferenceProviderBase):
+class HuggingFaceTextGenerationProvider(HuggingFaceChatProvider):
     def generate(self, prompt: str) -> str:
-        result = self.client.chat_completion(
-            messages=[{"role": "user", "content": prompt}],
-            model=self.config.model,
-        )
-        message = getattr(getattr(result, "choices", [None])[0], "message", None)
+        if self.config.chat_mode == "text_generation":
+            result = self._text_generation_with_raw_response_logging(prompt)
+            return result if isinstance(result, str) else str(result)
 
-        return _extract_message_content(message)
+        return self.chat(messages=[{"role": "user", "content": prompt}]).content
 
 
 def _annotation_to_json_type(annotation: Any) -> str:

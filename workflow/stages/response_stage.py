@@ -43,12 +43,14 @@ class ResponseStage(LLMStage):
                         f"tone={strategy.tone}",
                         f"verbosity={strategy.verbosity}",
                         f"conversation_move={strategy.conversation_move}",
+                        f"immediate_actions={', '.join(strategy.immediate_actions)}",
                     ]),
                 ),
                 (
                     "Reply instructions",
                     "\n".join([
                         "Mention nonverbal content only from the first-person perspective.",
+                        "Support the selected immediate actions through speech without claiming they have already succeeded. If ending the conversation, close the exchange without inviting another reply.",
                         "Do not reveal internal thoughts directly.",
                         "Use the emotional tone only where it helps the selected strategy feel natural.",
                         "Reply to the player while staying fully in character.",
