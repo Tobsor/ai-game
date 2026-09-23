@@ -185,12 +185,16 @@ class Character:
     def build_initial_context(self) -> InitialContext:
         return self.pipeline.initial_context_stage.run(TurnInput(prompt=""))
 
-    def initialize_message_loop_context(self) -> None:
+    def initialize_message_loop_context(self) -> InitialContext | None:
+        if self.db.response_context_initialized:
+            return None
+
         initial_context = self.build_initial_context()
         self.db.seed_response_context(
             system_prompt=self.build_system_prompt(),
             seed_context_prompt=self.build_seed_context_prompt(initial_context),
         )
+        return initial_context
     
     def get_sentiment_filter(self):
         return self.get_character_category_filter(MetadataCategory.SENTIMENT)
@@ -360,24 +364,20 @@ class Character:
 
         return (intention, selected_tactic)
     
-    def immediate_actions(self, action: NPCAction):
-        """
-        Tool function: When the character takes an immediate action as a consequence of the user prompt
+    def immediate_actions(self, actions: list[str | NPCAction] | str | NPCAction) -> bool:
+        """Apply conversation actions; ending takes precedence over continuing.
 
-        Args:
-            action: An immediate action that the NPC takes after the current interaction. Supported actions are: end_conversation.
-
-        Returns:
-            Boolean whether the NPC continues the conversation with the user or not
+        World actions are handled separately by trigger_external_actions.
         """
-        logger.verbose("Invoked immediate action with: %s", action)
-        try:
-            NPCAction(action)
-        except ValueError:
-            logger.error("Invalid action value detected: %s", action)
-            return NPCAction.KEEP_TALKING
-    
-        self.talk_ongoing = action != NPCAction.END_CONVERSATION
+        logger.verbose("Invoked immediate actions with: %s", actions)
+        if isinstance(actions, (str, NPCAction)):
+            actions = [actions]
+
+        for action in actions:
+            if action in (NPCAction.END_CONVERSATION, NPCAction.END_CONVERSATION.value):
+                self.talk_ongoing = False
+
+        return self.talk_ongoing
     
     def change_sentiment(self, new_sentiment: str, reasoning: str, tags: list[str] | None = None):
         """
@@ -405,8 +405,8 @@ class Character:
         if(prompt.strip() == ""):
             return ""
 
-        self.initialize_message_loop_context()
-        result = self.pipeline.run(TurnInput(prompt=prompt))
+        initial_context = self.initialize_message_loop_context()
+        result = self.pipeline.run(TurnInput(prompt=prompt), initial_context=initial_context)
         self.apply_turn_updates(result.terminal_update)
 
         return result.response.reply

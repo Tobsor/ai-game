@@ -1,5 +1,5 @@
 from logger import get_logger
-from workflow.models import TurnInput, TurnResult
+from workflow.models import InitialContext, TurnInput, TurnResult
 from workflow.stages import (
     AppraisalStage,
     GapAnalysisStage,
@@ -52,12 +52,13 @@ class TurnPipeline:
             status="error",
         )
 
-    def run(self, turn_input: TurnInput) -> TurnResult:
+    def run(self, turn_input: TurnInput, initial_context: InitialContext | None = None) -> TurnResult:
         stage_name = "InitialContextStage"
         stage_payload = turn_input
         try:
             self._log_stage_start(stage_name, stage_payload)
-            initial_context = self.initial_context_stage.run(turn_input)
+            if initial_context is None:
+                initial_context = self.initial_context_stage.run(turn_input)
             self._log_stage_completion(
                 stage_name,
                 initial_context,

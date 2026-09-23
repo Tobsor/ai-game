@@ -509,7 +509,7 @@ class AgentTest:
     def normalize_perception_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         npc_perception = payload.get("npc_perception")
         if not isinstance(npc_perception, dict):
-            npc_perception = {}
+            npc_perception = payload
 
         topic = payload.get("topic")
         if isinstance(topic, dict):
@@ -520,7 +520,7 @@ class AgentTest:
             }
         else:
             normalized_topic = {
-                "primary": "",
+                "primary": topic if isinstance(topic, str) else "",
                 "related": [],
                 "retrieval_queries": [],
             }

@@ -15,8 +15,8 @@ class GapAnalysisStage(LLMStage):
             [
                 ("Player input", perception.raw_prompt),
                 ("Available context", available_context or "No additional context provided."),
-                ("Detected intent", perception.player_intent),
-                ("Detected emotion", perception.player_emotion),
+                ("Detected intent", perception.npc_perception.player_intent),
+                ("Detected emotion", perception.npc_perception.player_emotion),
                 ("Request type", perception.request_type),
                 ("Primary topic", perception.topic.primary),
                 ("Related topics", ", ".join(perception.topic.related)),
