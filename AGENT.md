@@ -71,19 +71,43 @@ The NPC runs a specific routine to simulate thinking and decision process to gen
 
 1. Initial Context (`/workflow/stages/initial_context_stage.py`): Loads all relevant context data in preparation of the NPC simulation. This includes static data (e.g. pl_list, ali_chat examples) as well as dynamic data (relationship data, recent conversation history). This stage operates unrelated to the incoming player input.
 
-2. Perception Stage (`/workflow/stages/perception_stage.py`): LLM based stage that analyzes the player input against perceived reaction of the character given its context / profile data. This stage features a reinterpretatin workflow. If the Gap Analysis Stage would yield new information that could influence the perception of an NPC towards the input prompt, the perception should be revised and reinterpreted.
+2. Perception interprets the player input subjectively. It may identify a material gap,
+   retrieve once and revise once through `workflow/enrichment.py`.
+3. Appraisal evaluates personal significance and NPC emotion, with the same optional enrichment.
+   Finalized perception stays fixed, including plausible mistakes.
+4. Strategy selects conversational goals and immediate actions, with the same optional enrichment.
+   Finalized perception, appraisal and emotion stay fixed.
+5. Response realizes the strategy in character; it never retrieves.
+6. Terminal Update persists relevant state as before.
 
-3. Gap Analysis Stage (`/workflow/stages/gap_analysis_stage.py`): LLM based stage that analyses the current context including the perception output. It should evaluate if the context is sufficient or if it is necessary to fetch vector store information (especially considering knowledge / lore / memory knowledge).
+`ContextEnrichment`, `GapAnalysis` (shared prompt/validation), and `ContextRetriever` are
+reusable helpers, not pipeline stages. A stage emits its normal cognitive JSON plus
+`context_request` (one concise string, empty for no gap) and `gap_reason` (a brief explanation).
+The helper separates these fields from the cognitive result. Each eligible stage gets
+at most one backend request and one revision. No retries or query splitting occur.
+Initial context loading is separate from stage enrichment.
+Token consumption is guided by prompts, not new hard token caps.
 
-4. Retrieval Stage (`/workflow/stages/retrieval_stage.py`): The complementary stage for the Gap analysis stage. According to the decisions of the Gap analysis stage, the retrieval stage is instructed to retrieve data from the vector store and summarize it for the downstream processing.
+`RetrievedContext` carries initial context, shared evidence with record IDs/metadata,
+and stage/request/reason history. Failed retrieval adds no evidence; prior requests remain
+in history to prevent repeats. All later stages reuse it. Request matching is
+conservative and deterministic; the prompts additionally require semantic reuse.
+Every record is accessible except explicit character records belonging to another NPC.
+Failed enrichment preserves the valid draft. Conflicting later evidence may cause confusion
+without reopening upstream reasoning. Trace events belong to the requesting stage.
 
-5. Appraisal Stage (`/workflow/stages/appraisal_stage.py`): A LLM based stage that evaluates given the input prompt, the character profile and the aggregated context, what the input means to the NPC. It should evaluate which topics the input prompt touches and how important they are to the NPC, so that a authentic reaction can be generated. It should also evaluate which emotional state the NPC is expected to have.
+## Perception contract
 
-6. Strategy Stage (`/workflow/stages/strategy_stage.py`): A LLM based stage, that consumes the character profile, the appraisal output and the rest of the aggregated context, to compute a conversational strategy which the NPC follows to satisfy his needs / goals in this conversation with the player. Not only should it produce a conversational strategy, but it should also evaluate the real world actions that the NPC might perform as a response to the player input.
-
-7. Response Stage (`/workflow/stages/response_stage.py`): A LLM based stage which consumes every available context and produces a verbal response of the NPC. It is therefore only an executive stage which realizes the selected strategy without revisiting upstream decisions.
-
-8. Terminal Update Stage (`/workflow/stages/terminal_update_stage.py`): A closure stage, post conversation turn relevant information gets persisted in the vector store. This might be updated memory, conversation history, sentiment changes, etc.
+Finalized Perception returns exactly `raw_prompt` and `core`, validated by
+`workflow/perception_contract.py` for model results and fixed inputs. The shared helper
+extracts the enrichment decision before cognitive validation.
+`core` contains one-sentence situation, intent and player-attitude interpretations;
+one interaction type and topic; perceived player emotion (primary, low/medium/high intensity,
+and summary); and threat/manipulation levels (none/low/medium/high).
+Uncertainty belongs in the summaries. Player emotion is distinct from appraisal's NPC emotion.
+All cognitive fields are required; unknown fields, invalid types/values, and mismatched player
+text fail explicitly. Gap errors preserve a valid cognitive draft. Downstream stages consume
+the complete core and original player input without retrieval hints.
 
 # Knowledge Retrieval Rules (Chroma Metadata Filters)
 

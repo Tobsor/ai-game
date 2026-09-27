@@ -1,14 +1,17 @@
+from test.enrichment_support import stage_enrichment
+from pydantic import TypeAdapter
 """Static inputs and error-aware exports for isolated appraisal evaluations."""
 import csv
 import json
 import math
 import re
-from dataclasses import asdict, fields
+from dataclasses import asdict, fields, is_dataclass
 from pathlib import Path
 from typing import get_type_hints
 
 from models import StageExpectationMode, StageJudgeMetricResult
-from workflow.models import InitialContext, PerceptionResult, RetrievedContext
+from workflow.models import InitialContext, RetrievedContext
+from workflow.perception_contract import validate_perception
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +39,7 @@ def fixture_object(value, label):
 
 def construct_fixture(cls, payload, label):
     """Validate fixture types rather than silently repairing authoring mistakes."""
+    payload = dict(payload)
     hints = get_type_hints(cls)
     unknown = set(payload) - {field.name for field in fields(cls)}
     if unknown:
@@ -43,7 +47,9 @@ def construct_fixture(cls, payload, label):
     for name, value in payload.items():
         kind = hints[name]
         valid = True
-        if kind is str:
+        if is_dataclass(kind):
+            payload[name] = construct_fixture(kind, fixture_object(value, f"{label}.{name}"), f"{label}.{name}")
+        elif kind is str:
             valid = isinstance(value, str)
         elif kind is bool:
             valid = isinstance(value, bool)
@@ -65,10 +71,10 @@ def resolve_appraisal_inputs(prompt):
     if prompt.expectation_mode != StageExpectationMode.JUDGE or prompt.deterministic_checks:
         raise AppraisalFixtureError("Appraisal tests require judge mode without deterministic checks.")
     inputs = prompt.stage_inputs
-    for name in ("scenario_id", "initial_context_fixture", "perception_payload", "retrieved_context_payload"):
+    for name in ("scenario_id", "perception_payload", "retrieved_context_payload"):
         if name not in inputs or inputs[name] is None:
             raise AppraisalFixtureError(f"Appraisal tests require explicit {name}.")
-    for name in ("scenario_id", "initial_context_fixture"):
+    for name in ("scenario_id",):
         if not isinstance(inputs[name], str) or not inputs[name].strip():
             raise AppraisalFixtureError(f"{name} must be a nonblank string.")
     if not prompt.notes.strip():
@@ -76,7 +82,29 @@ def resolve_appraisal_inputs(prompt):
     if any(inputs.get(name) for name in ("vector_state_config", "vector_snapshot_path")):
         raise AppraisalFixtureError("Appraisal tests use static retrieval and cannot configure vector state.")
 
-    path = Path(inputs["initial_context_fixture"])
+    if "initial_context_payload" in inputs:
+        initial = construct_fixture(InitialContext, inputs["initial_context_payload"], "initial_context")
+    else:
+        initial = load_initial_context_fixture(inputs.get("initial_context_fixture"))
+
+    perception = validate_perception(inputs["perception_payload"], prompt.user_query)
+    retrieval = construct_fixture(
+        RetrievedContext, fixture_object(inputs["retrieved_context_payload"], "retrieved_context_payload"),
+        "retrieved_context_payload",
+    )
+    retrieval = TypeAdapter(RetrievedContext).validate_python(asdict(retrieval))
+    if not retrieval.combined_context.strip() and any(
+        getattr(retrieval, name).strip()
+        for name in ("memory_context", "relationship_context", "knowledge_context", "social_context")
+    ):
+        raise AppraisalFixtureError("Appraisal consumes combined_context; source evidence requires an explicit combined_context.")
+    return initial, perception, retrieval
+
+
+def load_initial_context_fixture(fixture_path):
+    if not isinstance(fixture_path, str) or not fixture_path.strip():
+        raise AppraisalFixtureError("Provide initial_context_payload or a nonblank initial_context_fixture.")
+    path = Path(fixture_path)
     if not path.is_absolute():
         path = REPO_ROOT / path
     try:
@@ -97,35 +125,22 @@ def resolve_appraisal_inputs(prompt):
     if initial.character_name != "Tom":
         raise AppraisalFixtureError("Appraisal fixtures must describe Tom.")
 
-    perception = fixture_object(inputs["perception_payload"], "perception_payload")
-    if "raw_prompt" in perception and perception["raw_prompt"] != prompt.user_query:
-        raise AppraisalFixtureError("perception_payload.raw_prompt must match user_query.")
-    perception["raw_prompt"] = prompt.user_query
-    perception = construct_fixture(PerceptionResult, perception, "perception_payload")
-    retrieval = construct_fixture(
-        RetrievedContext, fixture_object(inputs["retrieved_context_payload"], "retrieved_context_payload"),
-        "retrieved_context_payload",
-    )
-    if not retrieval.combined_context.strip() and any(
-        getattr(retrieval, name).strip()
-        for name in ("memory_context", "relationship_context", "knowledge_context", "social_context")
-    ):
-        raise AppraisalFixtureError("Appraisal consumes combined_context; source evidence requires an explicit combined_context.")
-    return initial, perception, retrieval
+    return initial
 
 
 def appraisal_execution_context(prompt, resolved):
     return {
         "scenario_id": prompt.stage_inputs["scenario_id"],
-        "initial_context_fixture": prompt.stage_inputs["initial_context_fixture"],
+        "initial_context_fixture": prompt.stage_inputs.get("initial_context_fixture", "inline"),
         **{name: asdict(value) for name, value in zip(
             ("initial_context", "perception", "retrieved_context"), resolved
         )},
     }
 
 
-def run_appraisal(character, resolved):
-    appraisal, emotion = character.pipeline.appraisal_stage.run(*resolved)
+def run_appraisal(character, resolved, inputs=None):
+    with stage_enrichment(character.pipeline.appraisal_stage, inputs or {}):
+        appraisal, emotion = character.pipeline.appraisal_stage.run(*resolved)
     return {"appraisal": appraisal, "emotion": emotion}
 
 
@@ -172,7 +187,8 @@ def evaluate_appraisal_case(runner, character, prompt):
         resolved = resolve_appraisal_inputs(prompt)
         context = appraisal_execution_context(prompt, resolved)
         trace["status"] = "execution_error"
-        output = run_appraisal(character, resolved)
+        output = run_appraisal(character, resolved, prompt.stage_inputs)
+        context = appraisal_execution_context(prompt, resolved)
         trace["status"] = "judge_error"
         results = runner.evaluate_judge_metrics(
             character, prompt, output, context, runner.serialize_value(output),

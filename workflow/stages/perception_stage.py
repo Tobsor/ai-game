@@ -1,24 +1,29 @@
+import json
+
+from workflow.perception_contract import validate_perception
+from workflow.enrichment import GapAnalysis
 from logger import get_logger
-from workflow.models import InitialContext, NPCPerception, PerceptionResult, PerceptionTopic, RetrievedContext, TurnInput
-from workflow.stages.base import LLMStage
+from workflow.models import InitialContext, PerceptionResult, RetrievedContext, TurnInput
+from workflow.stages.base import EnrichedStage
 from workflow.stages.prompting import format_prompt
 
 logger = get_logger(__name__)
 
 
-class PerceptionStage(LLMStage):
+class PerceptionStage(EnrichedStage):
     def get_prompt(
         self,
         turn_input: TurnInput,
         initial_context: InitialContext,
         retrieved_context: RetrievedContext | None = None,
     ) -> str:
-        return format_prompt(
+        return GapAnalysis.prompt(format_prompt(
             f"You are simulating how the NPC {initial_context.character_name} perceives the player's latest message. Do not generate dialogue. Analyze the player's prompt from this NPC's perspective so downstream stages can act on that perception. Evaluate the message through this character's personality, knowledge, sentiment, and social awareness, and only infer signals this character would realistically notice or understand. Reflect on whether this NPC is perceptive enough to recognize subtle manipulation, threat, ambiguity, or emotional subtext rather than assuming perfect insight.",
             [
                 ("Situation", initial_context.situation),
                 ("Current sentiment towards player", initial_context.sentiment),
                 ("Character definition", initial_context.character_definition),
+                ("Belief state", "\n".join(initial_context.belief_state)),
                 ("Example dialogues", initial_context.example_dialogues),
                 (
                     "Relevant relationship and goals",
@@ -34,19 +39,18 @@ class PerceptionStage(LLMStage):
                 (
                     "Decision rubric",
                     "\n".join([
-                        "Analyze the player's message and infer npc_perception.player_intent as a concise description of what the player is trying to achieve, or unknown if it cannot be determined.",
-                        "Summarize what the NPC subjectively believes is happening in summary.",
-                        "Represent npc_perception.perceived_intent and npc_perception.perceived_attitude as compact arrays of labels.",
-                        "Analyze the player's message and infer npc_perception.player_emotion, defaulting to neutral when no strong emotional signal is present.",
-                        "Classify request_type with a concise category such as general, question, demand, negotiation, threat, social bid, or similar.",
-                        "Group all theme and retrieval cues in topic. Use topic.primary for the main subject, topic.related for compact related topic labels, and topic.retrieval_queries for concrete retrieval queries that could help later stages.",
-                        "Set npc_perception.threat_signal to none unless the player expresses hostility, danger, intimidation, coercion, or violent intent.",
-                        "Set npc_perception.manipulation_signal to none unless the player appears deceptive, coercive, flattering strategically, guilt-inducing, or otherwise manipulative.",
-                        "Set npc_perception.topic_sensitivity to normal unless the topic is sensitive, secret, risky, personal, or delicate for this NPC.",
-                        "Return strictly valid JSON with exactly these top-level fields: summary, npc_perception, topic, request_type.",
-                        'The npc_perception object must contain: perceived_intent, perceived_attitude, threat_signal, manipulation_signal, topic_sensitivity, player_intent, player_emotion.',
-                        'The topic object must contain: primary, related, retrieval_queries.',
-                        'Do not return markdown, prose, explanations, or code fences. Output only the JSON object.',
+                        "Evaluate every interpretive field strictly from this NPC's viewpoint, consistent with their profile, knowledge, biases, current state, and perceptiveness; report what they would notice, believe, or suspect, not an objective analyst's assessment or the player's hidden truth.",
+                        "Apply this perspective to all core fields and context requests: identify only context needs this NPC would recognize, and preserve plausible misunderstandings or missed signals rather than correcting them with outside knowledge.",
+                        "Return raw_prompt and core plus the two enrichment fields specified below as a JSON object; copy raw_prompt verbatim from Player input.",
+                        "core contains situation_summary, interaction_type, topic, perceived_intent, perceived_player_attitude, perceived_player_emotion, perceived_threat, and perceived_manipulation.",
+                        "Use one concise sentence each for situation_summary, perceived_intent, and perceived_player_attitude; acknowledge uncertainty and relevant personal sensitivity without inventing facts.",
+                        "situation_summary describes what the NPC believes is happening in this interaction; perceived_intent describes what the player seems to want to achieve; perceived_player_attitude describes the player's apparent stance toward the NPC, such as respectful, dismissive, or cooperative.",
+                        "interaction_type identifies the player's communicative act as one categorical string (such as question, greeting, threat, negotiation, or social_bid); topic names the main subject as one string, not a list or multiple categories.",
+                        "perceived_player_emotion must be a nested JSON object, never a string or array, with exactly primary (an emotion label), intensity (low, medium, or high), and summary (one sentence grounding the inference); describe the player's inferred emotional state, distinct from their attitude and the NPC's reaction.",
+                        "perceived_threat grades perceived danger or harm; perceived_manipulation grades attempted influence through deception, coercion, or exploitation. Each uses none, low, medium, or high, reflecting the NPC's assessment rather than objective certainty.",
+                        "Use neutral with low intensity when the player shows no particular emotion; describe uncertainty in the summary when evidence is unclear.",
+                        "Your entire output must be one valid JSON object strictly matching the specified structure and enrichment fields: exact names, nesting, types, and allowed intensity values. All cognitive fields are required and nonblank; do not rename or flatten fields, use null, or include commentary, markdown, or code fences. Only context_request may be empty.",
+                        "Do not produce NPC emotion, appraisal, strategy, or dialogue.",
                     ]),
                 ),
                 ("Player input", turn_input.prompt),
@@ -54,103 +58,39 @@ class PerceptionStage(LLMStage):
                     "Additional retrieved context",
                     retrieved_context.combined_context if retrieved_context is not None else "",
                 ),
+                (
+                    "Required JSON structure",
+                    "Use this cognitive structure plus the enrichment fields below, replacing placeholders with your assessment and choosing intensity values from the rubric; retain raw_prompt exactly as shown.\n"
+                    + json.dumps({
+                        "raw_prompt": turn_input.prompt,
+                        "core": {
+                            "situation_summary": "<one sentence>",
+                            "interaction_type": "<one category>",
+                            "topic": "<one topic>",
+                            "perceived_intent": "<one sentence>",
+                            "perceived_player_attitude": "<one sentence>",
+                            "perceived_player_emotion": {
+                                "primary": "<emotion>",
+                                "intensity": "<low|medium|high>",
+                                "summary": "<one sentence>",
+                            },
+                            "perceived_threat": "<none|low|medium|high>",
+                            "perceived_manipulation": "<none|low|medium|high>",
+                        },
+                    }, ensure_ascii=False, indent=2),
+                ),
             ],
-        )
+        ), retrieved_context or RetrievedContext())
 
     def run(
         self,
         turn_input: TurnInput,
         initial_context: InitialContext,
         retrieved_context: RetrievedContext | None = None,
-        stage_name: str = "PerceptionStage",
     ) -> PerceptionResult:
-        logger.verbose("Running perception stage for prompt length=%s", len(turn_input.prompt))
-        stage_prompt = self.get_prompt(turn_input, initial_context, retrieved_context)
-        response = self.character.agent.run_prompt(
-            prompt=stage_prompt,
-            stage_name=stage_name,
-            payload={
-                "input_prompt": turn_input.prompt,
-                "stage_prompt": stage_prompt,
-                "has_retrieved_context": retrieved_context is not None and retrieved_context.combined_context != "",
-            },
+        context = retrieved_context if retrieved_context is not None else RetrievedContext()
+        return self.enrichment.run(
+            stage_name="PerceptionStage", initial_context=initial_context, context=context,
+            build_prompt=lambda: self.get_prompt(turn_input, initial_context, context),
+            parse_result=lambda payload, response, prompt: validate_perception(payload, turn_input.prompt),
         )
-        parsed_response = self.character.agent.parse_output(response.content, fallback={})
-
-        npc_perception_payload = self.detect_npc_perception_payload(parsed_response)
-        return PerceptionResult(
-            raw_prompt=turn_input.prompt,
-            stage_prompt=stage_prompt,
-            summary=self.detect_summary(parsed_response),
-            npc_perception=NPCPerception(
-                perceived_intent=self.detect_string_list(npc_perception_payload, "perceived_intent"),
-                perceived_attitude=self.detect_string_list(npc_perception_payload, "perceived_attitude"),
-                player_intent=self.detect_player_intent(npc_perception_payload),
-                player_emotion=self.detect_player_emotion(npc_perception_payload),
-                threat_signal=self.detect_threat_signal(npc_perception_payload),
-                manipulation_signal=self.detect_manipulation_signal(npc_perception_payload),
-                topic_sensitivity=self.detect_topic_sensitivity(npc_perception_payload),
-            ),
-            request_type=self.detect_request_type(parsed_response),
-            topic=self.detect_topic(parsed_response),
-            tool_calls=[],
-            retrieval_reasoning="",
-        )
-
-    def detect_summary(self, parsed_response: dict) -> str:
-        value = parsed_response.get("summary")
-        if isinstance(value, str) and value.strip() != "":
-            return value.strip()
-        npc_perception_payload = self.detect_npc_perception_payload(parsed_response)
-        intent = self.detect_player_intent(npc_perception_payload)
-        topic = self.detect_topic(parsed_response).primary
-        if topic != "":
-            return f"{intent} about {topic}"
-        return intent
-
-    def detect_npc_perception_payload(self, parsed_response: dict) -> dict:
-        value = parsed_response.get("npc_perception")
-        return value if isinstance(value, dict) else {}
-
-    def detect_string_list(self, parsed_response: dict, key: str) -> list[str]:
-        value = parsed_response.get(key)
-        if not isinstance(value, list):
-            return []
-        return [str(item).strip() for item in value if str(item).strip() != ""]
-
-    def detect_player_intent(self, parsed_response: dict) -> str:
-        value = parsed_response.get("player_intent")
-        return str(value) if isinstance(value, str) and value.strip() != "" else "unknown"
-
-    def detect_player_emotion(self, parsed_response: dict) -> str:
-        value = parsed_response.get("player_emotion")
-        return str(value) if isinstance(value, str) and value.strip() != "" else "neutral"
-
-    def detect_request_type(self, parsed_response: dict) -> str:
-        value = parsed_response.get("request_type")
-        return str(value) if isinstance(value, str) and value.strip() != "" else "general"
-
-    def detect_topic(self, parsed_response: dict) -> PerceptionTopic:
-        value = parsed_response.get("topic")
-        if isinstance(value, dict):
-            return PerceptionTopic(
-                primary=self.detect_topic_value(value.get("primary")),
-                related=self.detect_string_list(value, "related"),
-                retrieval_queries=self.detect_string_list(value, "retrieval_queries"),
-            )
-        return PerceptionTopic()
-
-    def detect_topic_value(self, value: object) -> str:
-        return str(value).strip() if isinstance(value, str) and value.strip() != "" else ""
-
-    def detect_threat_signal(self, parsed_response: dict) -> str:
-        value = parsed_response.get("threat_signal")
-        return str(value) if isinstance(value, str) and value.strip() != "" else "none"
-
-    def detect_manipulation_signal(self, parsed_response: dict) -> str:
-        value = parsed_response.get("manipulation_signal")
-        return str(value) if isinstance(value, str) and value.strip() != "" else "none"
-
-    def detect_topic_sensitivity(self, parsed_response: dict) -> str:
-        value = parsed_response.get("topic_sensitivity")
-        return str(value) if isinstance(value, str) and value.strip() != "" else "normal"

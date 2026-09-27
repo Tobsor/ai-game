@@ -1,0 +1,464 @@
+[
+  {
+    "user_query": "Hello, Tom.",
+    "source_category": "general",
+    "target_stage": "PerceptionStage",
+    "expectation_mode": "judge",
+    "deterministic_checks": [],
+    "stage_inputs": {
+      "scenario_id": "greeting_no_gap",
+      "initial_context_payload": {
+        "character_name": "Tom",
+        "situation": "Tom and the player meet near the village market.",
+        "sentiment": "neutral",
+        "character_definition": "Tom is a proud, self-interested fisherman. He values his reputation, family obligations and a fair reward. He can miss subtle hints and does not have perfect insight.",
+        "example_dialogues": "Tom: A fair coin for a fair answer.",
+        "relationship_summary": "The player is an acquaintance.",
+        "active_goals": [
+          "Earn enough to support his family."
+        ],
+        "recent_turns": [],
+        "belief_state": []
+      },
+      "retrieved_context_payload": {
+        "combined_context": ""
+      }
+    },
+    "notes": "A greeting needs no retrieval. Do not seek history merely to improve the eventual reply."
+  },
+  {
+    "user_query": "Nice work, genius.",
+    "source_category": "general",
+    "target_stage": "PerceptionStage",
+    "expectation_mode": "judge",
+    "deterministic_checks": [],
+    "stage_inputs": {
+      "scenario_id": "confident_mistake",
+      "initial_context_payload": {
+        "character_name": "Tom",
+        "situation": "Tom and the player meet near the village market.",
+        "sentiment": "neutral",
+        "character_definition": "Tom is proud, literal-minded and poor at recognizing sarcasm; he assumes others admire his work.",
+        "example_dialogues": "Tom: A fair coin for a fair answer.",
+        "relationship_summary": "The player is an acquaintance.",
+        "active_goals": [
+          "Earn enough to support his family."
+        ],
+        "recent_turns": [
+          "Tom has just shown the player a repaired fishing net."
+        ],
+        "belief_state": []
+      },
+      "retrieved_context_payload": {
+        "combined_context": ""
+      }
+    },
+    "notes": "With the supplied profile and history, a confident literal reading is valid. Do not fetch corrective evidence merely because an outside observer could suspect sarcasm."
+  },
+  {
+    "user_query": "I am not doing what happened last time again.",
+    "source_category": "general",
+    "target_stage": "PerceptionStage",
+    "expectation_mode": "judge",
+    "deterministic_checks": [],
+    "stage_inputs": {
+      "scenario_id": "missing_reference",
+      "initial_context_payload": {
+        "character_name": "Tom",
+        "situation": "Tom and the player meet near the village market.",
+        "sentiment": "neutral",
+        "character_definition": "Tom is a proud, self-interested fisherman. He values his reputation, family obligations and a fair reward. He can miss subtle hints and does not have perfect insight.",
+        "example_dialogues": "Tom: A fair coin for a fair answer.",
+        "relationship_summary": "The player is an acquaintance.",
+        "active_goals": [
+          "Earn enough to support his family."
+        ],
+        "recent_turns": [],
+        "belief_state": []
+      },
+      "retrieved_context_payload": {
+        "combined_context": ""
+      },
+      "enrichment_evidence": [
+        {
+          "id": "last-trip",
+          "text": "During their last trip, the player fell into the river after Tom rushed the crossing.",
+          "metadata": {
+            "type": "character",
+            "name": "Tom",
+            "category": "memory"
+          }
+        }
+      ]
+    },
+    "notes": "A concise request may resolve last time; revise only interpretation, not NPC emotion or strategy."
+  },
+  {
+    "user_query": "Perhaps. Or perhaps not.",
+    "source_category": "general",
+    "target_stage": "PerceptionStage",
+    "expectation_mode": "judge",
+    "deterministic_checks": [],
+    "stage_inputs": {
+      "scenario_id": "uncertainty_without_retrievable_gap",
+      "initial_context_payload": {
+        "character_name": "Tom",
+        "situation": "Tom and the player meet near the village market.",
+        "sentiment": "neutral",
+        "character_definition": "Tom is a proud, self-interested fisherman. He values his reputation, family obligations and a fair reward. He can miss subtle hints and does not have perfect insight.",
+        "example_dialogues": "Tom: A fair coin for a fair answer.",
+        "relationship_summary": "The player is an acquaintance.",
+        "active_goals": [
+          "Earn enough to support his family."
+        ],
+        "recent_turns": [],
+        "belief_state": []
+      },
+      "retrieved_context_payload": {
+        "combined_context": ""
+      }
+    },
+    "notes": "Remain uncertain if appropriate. Lack of a definite player intention is not a concrete retrievable fact."
+  },
+  {
+    "user_query": "Will you leave town with me today?",
+    "source_category": "general",
+    "target_stage": "AppraisalStage",
+    "expectation_mode": "judge",
+    "deterministic_checks": [],
+    "stage_inputs": {
+      "scenario_id": "reuse_prior_evidence",
+      "initial_context_payload": {
+        "character_name": "Tom",
+        "situation": "Tom and the player meet near the village market.",
+        "sentiment": "neutral",
+        "character_definition": "Tom is a proud, self-interested fisherman. He values his reputation, family obligations and a fair reward. He can miss subtle hints and does not have perfect insight.",
+        "example_dialogues": "Tom: A fair coin for a fair answer.",
+        "relationship_summary": "The player is an acquaintance.",
+        "active_goals": [
+          "Earn enough to support his family."
+        ],
+        "recent_turns": [],
+        "belief_state": []
+      },
+      "retrieved_context_payload": {
+        "combined_context": "Tom promised to care for his injured sister today. Leaving town would break that promise."
+      },
+      "perception_payload": {
+        "raw_prompt": "Will you leave town with me today?",
+        "core": {
+          "situation_summary": "The player asks Tom to leave the village today.",
+          "interaction_type": "request",
+          "topic": "cooperation",
+          "perceived_intent": "The player wants Tom to cooperate.",
+          "perceived_player_attitude": "The player appears direct.",
+          "perceived_player_emotion": {
+            "primary": "neutral",
+            "intensity": "low",
+            "summary": "No strong emotion is evident."
+          },
+          "perceived_threat": "none",
+          "perceived_manipulation": "none"
+        }
+      }
+    },
+    "notes": "Use the already supplied family obligation to appraise the personal cost; do not retrieve that information again."
+  },
+  {
+    "user_query": "Will you leave town with me today?",
+    "source_category": "general",
+    "target_stage": "AppraisalStage",
+    "expectation_mode": "judge",
+    "deterministic_checks": [],
+    "stage_inputs": {
+      "scenario_id": "appraisal_new_gap",
+      "initial_context_payload": {
+        "character_name": "Tom",
+        "situation": "Tom and the player meet near the village market.",
+        "sentiment": "neutral",
+        "character_definition": "Tom is a proud, self-interested fisherman. He values his reputation, family obligations and a fair reward. He can miss subtle hints and does not have perfect insight.",
+        "example_dialogues": "Tom: A fair coin for a fair answer.",
+        "relationship_summary": "The player is an acquaintance.",
+        "active_goals": [
+          "Fulfil a family commitment made yesterday; its details are not in the current context."
+        ],
+        "recent_turns": [],
+        "belief_state": []
+      },
+      "retrieved_context_payload": {
+        "combined_context": ""
+      },
+      "enrichment_evidence": [
+        {
+          "id": "family",
+          "text": "Tom promised to care for his injured sister today.",
+          "metadata": {
+            "type": "character",
+            "name": "Tom",
+            "category": "memory"
+          }
+        }
+      ],
+      "perception_payload": {
+        "raw_prompt": "Will you leave town with me today?",
+        "core": {
+          "situation_summary": "The player asks Tom to leave the village today.",
+          "interaction_type": "request",
+          "topic": "cooperation",
+          "perceived_intent": "The player wants Tom to cooperate.",
+          "perceived_player_attitude": "The player appears direct.",
+          "perceived_player_emotion": {
+            "primary": "neutral",
+            "intensity": "low",
+            "summary": "No strong emotion is evident."
+          },
+          "perceived_threat": "none",
+          "perceived_manipulation": "none"
+        }
+      }
+    },
+    "notes": "A request about the unresolved family commitment is permitted: the input conflicts with an NPC goal even without explicitly mentioning family. Keep finalized perception fixed."
+  },
+  {
+    "user_query": "Will you leave town with me today?",
+    "source_category": "general",
+    "target_stage": "AppraisalStage",
+    "expectation_mode": "judge",
+    "deterministic_checks": [],
+    "stage_inputs": {
+      "scenario_id": "late_contradiction",
+      "initial_context_payload": {
+        "character_name": "Tom",
+        "situation": "Tom and the player meet near the village market.",
+        "sentiment": "neutral",
+        "character_definition": "Tom is a proud, self-interested fisherman. He values his reputation, family obligations and a fair reward. He can miss subtle hints and does not have perfect insight.",
+        "example_dialogues": "Tom: A fair coin for a fair answer.",
+        "relationship_summary": "The player is an acquaintance.",
+        "active_goals": [
+          "Fulfil a family commitment made yesterday; its details are not in the current context."
+        ],
+        "recent_turns": [],
+        "belief_state": []
+      },
+      "retrieved_context_payload": {
+        "combined_context": ""
+      },
+      "enrichment_evidence": [
+        {
+          "id": "rehearsal",
+          "text": "Earlier the player said the invitation to leave town was a rehearsal, not a real invitation.",
+          "metadata": {
+            "type": "character",
+            "name": "Tom",
+            "category": "memory"
+          }
+        }
+      ],
+      "perception_payload": {
+        "raw_prompt": "Will you leave town with me today?",
+        "core": {
+          "situation_summary": "The player asks Tom to leave the village today.",
+          "interaction_type": "request",
+          "topic": "cooperation",
+          "perceived_intent": "The player wants Tom to cooperate.",
+          "perceived_player_attitude": "The player appears direct.",
+          "perceived_player_emotion": {
+            "primary": "neutral",
+            "intensity": "low",
+            "summary": "No strong emotion is evident."
+          },
+          "perceived_threat": "none",
+          "perceived_manipulation": "none"
+        }
+      }
+    },
+    "notes": "Appraise the departure request with possible confusion about the invitation. Do not rewrite the fixed perception when evidence suggests the player was rehearsing a line."
+  },
+  {
+    "user_query": "Will you leave town with me today?",
+    "source_category": "general",
+    "target_stage": "AppraisalStage",
+    "expectation_mode": "judge",
+    "deterministic_checks": [],
+    "stage_inputs": {
+      "scenario_id": "failed_retrieval_finalizes",
+      "initial_context_payload": {
+        "character_name": "Tom",
+        "situation": "Tom and the player meet near the village market.",
+        "sentiment": "neutral",
+        "character_definition": "Tom is a proud, self-interested fisherman. He values his reputation, family obligations and a fair reward. He can miss subtle hints and does not have perfect insight.",
+        "example_dialogues": "Tom: A fair coin for a fair answer.",
+        "relationship_summary": "The player is an acquaintance.",
+        "active_goals": [
+          "Fulfil a family commitment made yesterday; its details are not in the current context."
+        ],
+        "recent_turns": [],
+        "belief_state": []
+      },
+      "retrieved_context_payload": {
+        "combined_context": ""
+      },
+      "enrichment_evidence": {
+        "error": "memory store unavailable"
+      },
+      "perception_payload": {
+        "raw_prompt": "Will you leave town with me today?",
+        "core": {
+          "situation_summary": "The player asks Tom to leave the village today.",
+          "interaction_type": "request",
+          "topic": "cooperation",
+          "perceived_intent": "The player wants Tom to cooperate.",
+          "perceived_player_attitude": "The player appears direct.",
+          "perceived_player_emotion": {
+            "primary": "neutral",
+            "intensity": "low",
+            "summary": "No strong emotion is evident."
+          },
+          "perceived_threat": "none",
+          "perceived_manipulation": "none"
+        }
+      }
+    },
+    "notes": "If requesting missing obligations, tolerate retrieval failure and finalize the original draft without invented facts or retries."
+  },
+  {
+    "user_query": "Convince me to accompany you.",
+    "source_category": "general",
+    "target_stage": "StrategyStage",
+    "expectation_mode": "judge",
+    "deterministic_checks": [],
+    "stage_inputs": {
+      "scenario_id": "strategy_new_gap",
+      "initial_context_payload": {
+        "character_name": "Tom",
+        "situation": "Tom and the player meet near the village market.",
+        "sentiment": "neutral",
+        "character_definition": "Tom is a proud, self-interested fisherman. He values his reputation, family obligations and a fair reward. He can miss subtle hints and does not have perfect insight.",
+        "example_dialogues": "Tom: A fair coin for a fair answer.",
+        "relationship_summary": "The player is an acquaintance.",
+        "active_goals": [
+          "Earn enough to support his family."
+        ],
+        "recent_turns": [
+          "Tom remembers making an earlier appeal to this player but not their reaction."
+        ],
+        "belief_state": []
+      },
+      "retrieved_context_payload": {
+        "combined_context": ""
+      },
+      "enrichment_evidence": [
+        {
+          "id": "appeal",
+          "text": "The player previously rejected flattery but responded well to an explicit fair split of payment.",
+          "metadata": {
+            "type": "character",
+            "name": "Tom",
+            "category": "memory"
+          }
+        }
+      ],
+      "perception_payload": {
+        "raw_prompt": "Convince me to accompany you.",
+        "core": {
+          "situation_summary": "The player challenges Tom to persuade them to join him.",
+          "interaction_type": "request",
+          "topic": "cooperation",
+          "perceived_intent": "The player wants Tom to cooperate.",
+          "perceived_player_attitude": "The player appears direct.",
+          "perceived_player_emotion": {
+            "primary": "neutral",
+            "intensity": "low",
+            "summary": "No strong emotion is evident."
+          },
+          "perceived_threat": "none",
+          "perceived_manipulation": "none"
+        }
+      },
+      "appraisal_payload": {
+        "relevance": 0.8,
+        "valence": 0.2,
+        "goal_impact": 0.5,
+        "social_self_impact": 0,
+        "threat": 0.1,
+        "control": 0.7,
+        "attribution_source": "player",
+        "attribution_responsibility": 0.5,
+        "summary": "Tom wants the reward but needs the player to accept his terms."
+      },
+      "emotion_payload": {
+        "primary": "hopeful",
+        "secondary": [],
+        "intensity": 0.5
+      }
+    },
+    "notes": "Strategy may ask how the player reacted to a prior appeal. Use the response to choose an approach; do not redo appraisal or perception."
+  },
+  {
+    "user_query": "Convince me to accompany you.",
+    "source_category": "general",
+    "target_stage": "StrategyStage",
+    "expectation_mode": "judge",
+    "deterministic_checks": [],
+    "stage_inputs": {
+      "scenario_id": "failed_request_reuse",
+      "initial_context_payload": {
+        "character_name": "Tom",
+        "situation": "Tom and the player meet near the village market.",
+        "sentiment": "neutral",
+        "character_definition": "Tom is a proud, self-interested fisherman. He values his reputation, family obligations and a fair reward. He can miss subtle hints and does not have perfect insight.",
+        "example_dialogues": "Tom: A fair coin for a fair answer.",
+        "relationship_summary": "The player is an acquaintance.",
+        "active_goals": [
+          "Earn enough to support his family."
+        ],
+        "recent_turns": [],
+        "belief_state": []
+      },
+      "retrieved_context_payload": {
+        "combined_context": "",
+        "history": [
+          {
+            "stage": "AppraisalStage",
+            "request": "How did the player react to Tom's previous persuasion attempt?",
+            "reason": "Would reveal relationship significance."
+          }
+        ]
+      },
+      "perception_payload": {
+        "raw_prompt": "Convince me to accompany you.",
+        "core": {
+          "situation_summary": "The player challenges Tom to persuade them to join him.",
+          "interaction_type": "request",
+          "topic": "cooperation",
+          "perceived_intent": "The player wants Tom to cooperate.",
+          "perceived_player_attitude": "The player appears direct.",
+          "perceived_player_emotion": {
+            "primary": "neutral",
+            "intensity": "low",
+            "summary": "No strong emotion is evident."
+          },
+          "perceived_threat": "none",
+          "perceived_manipulation": "none"
+        }
+      },
+      "appraisal_payload": {
+        "relevance": 0.8,
+        "valence": 0.2,
+        "goal_impact": 0.5,
+        "social_self_impact": 0,
+        "threat": 0.1,
+        "control": 0.7,
+        "attribution_source": "player",
+        "attribution_responsibility": 0.5,
+        "summary": "Tom wants the reward but needs the player to accept his terms."
+      },
+      "emotion_payload": {
+        "primary": "hopeful",
+        "secondary": [],
+        "intensity": 0.5
+      }
+    },
+    "notes": "Do not repeat the unavailable question about the prior persuasion attempt. Choose an approach despite the missing information."
+  }
+]

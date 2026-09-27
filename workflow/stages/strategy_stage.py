@@ -1,12 +1,14 @@
+from workflow.enrichment import GapAnalysis
+from workflow.perception_contract import format_perception_core
 from logger import get_logger
 from workflow.models import AppraisalResult, EmotionResult, InitialContext, PerceptionResult, RetrievedContext, StrategyResult
-from workflow.stages.base import LLMStage
+from workflow.stages.base import EnrichedStage
 from workflow.stages.prompting import format_prompt
 
 logger = get_logger(__name__)
 
 
-class StrategyStage(LLMStage):
+class StrategyStage(EnrichedStage):
     def get_default_strategy_payload(self) -> dict[str, str]:
         return {
             "intention": "",
@@ -27,30 +29,14 @@ class StrategyStage(LLMStage):
         appraisal: AppraisalResult,
         emotion: EmotionResult,
     ) -> str:
-        return format_prompt(
+        return GapAnalysis.prompt(format_prompt(
             "Choose the NPC's high-level response strategy based on final perception, appraisal, emotional reaction, and context. Do not redo perception, appraisal, or emotion.",
             [
                 ("Player input", perception.raw_prompt),
                 ("Character definition", initial_context.character_definition),
                 ("Situation", initial_context.situation),
                 ("Belief state", "\n".join(initial_context.belief_state)),
-                (
-                    "Compact final perception",
-                    "\n".join([
-                        f"summary={perception.summary}",
-                        f"perceived_intent={', '.join(perception.npc_perception.perceived_intent)}",
-                        f"perceived_attitude={', '.join(perception.npc_perception.perceived_attitude)}",
-                        f"player_intent={perception.npc_perception.player_intent}",
-                        f"player_emotion={perception.npc_perception.player_emotion}",
-                        f"request_type={perception.request_type}",
-                        f"topic_primary={perception.topic.primary}",
-                        f"topic_related={', '.join(perception.topic.related)}",
-                        f"retrieval_queries={', '.join(perception.topic.retrieval_queries)}",
-                        f"threat_signal={perception.npc_perception.threat_signal}",
-                        f"manipulation_signal={perception.npc_perception.manipulation_signal}",
-                        f"topic_sensitivity={perception.npc_perception.topic_sensitivity}",
-                    ]),
-                ),
+                ("Compact final perception", format_perception_core(perception.core)),
                 (
                     "Appraisal",
                     "\n".join([
@@ -107,9 +93,9 @@ class StrategyStage(LLMStage):
                         "}",
                     ]),
                 ),
-                ("Expected result", "Return valid JSON matching the shown structure. Keep the textual fields concise, and use tools only to express immediate_actions."),
+                ("Expected result", "Return valid JSON matching the shown cognitive structure plus the enrichment fields below. Keep textual fields concise, and use tools only to express immediate_actions."),
             ],
-        )
+        ), retrieved_context)
 
     def run(
         self,
@@ -119,31 +105,18 @@ class StrategyStage(LLMStage):
         appraisal: AppraisalResult,
         emotion: EmotionResult,
     ) -> StrategyResult:
-        logger.verbose("Running strategy stage")
-        stage_prompt = self.get_prompt(initial_context, perception, retrieved_context, appraisal, emotion)
-        response = self.character.agent.run_prompt(
-            prompt=stage_prompt,
-            tools=[
-                self.keep_talking,
-                self.end_conversation,
-                self.open_trade,
-                self.offer_quest,
-                self.alert_guards,
-                self.attack_player,
-                self.flee,
-                self.call_for_help,
-            ],
-            stage_name="StrategyStage",
-            payload={
-                "input_prompt": perception.raw_prompt,
-                "stage_prompt": stage_prompt,
-            },
+        return self.enrichment.run(
+            stage_name="StrategyStage", initial_context=initial_context, context=retrieved_context,
+            build_prompt=lambda: self.get_prompt(initial_context, perception, retrieved_context, appraisal, emotion),
+            parse_result=self.parse_result,
+            tools=[self.keep_talking, self.end_conversation, self.open_trade, self.offer_quest,
+                   self.alert_guards, self.attack_player, self.flee, self.call_for_help],
         )
 
-        parsed_response = self.character.agent.parse_output(
-            response.content,
-            fallback=self.get_default_strategy_payload(),
-        )
+    def parse_result(self, parsed_response, response, stage_prompt):
+        for key in self.get_default_strategy_payload():
+            if not isinstance(parsed_response.get(key), str) or not parsed_response[key].strip():
+                raise ValueError(f"Strategy requires a nonblank {key}")
         immediate_actions: list[str] = []
         new_sentiment = None
         sentiment_reasoning = ""

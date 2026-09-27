@@ -60,12 +60,14 @@ class ChromaDBHelper:
 
         self.db.upsert(**kwargs)
 
-    def query_docs(self, prompt: str, filter: dict[str, list[dict[str, str]]] | None = None):
+    def query_records(self, prompt: str, filter: dict | None = None) -> list[dict[str, Any]]:
+        """One vector query, retaining evidence identity and provenance for turn-level reuse."""
         embedding = self.get_embedding(prompt)
 
         kwargs = {
             "query_embeddings": embedding,
             "n_results":5,
+            "include": ["documents", "metadatas", "distances"],
         }
 
         if filter != None:
@@ -73,29 +75,20 @@ class ChromaDBHelper:
 
         res = self.db.query(**kwargs)
 
-        documents = res.get("documents")
-        distances = res.get("distances")
+        records = []
+        for ids, docs, distances, metadatas in zip(
+            res.get("ids") or [], res.get("documents") or [],
+            res.get("distances") or [], res.get("metadatas") or [],
+        ):
+            for identifier, doc, distance, metadata in zip(ids, docs, distances, metadatas):
+                if doc and str(doc).strip() and isinstance(distance, (int, float)) and distance <= self.MAX_QUERY_DISTANCE:
+                    records.append({"id": identifier, "text": str(doc),
+                                    "distance": distance, "metadata": metadata or {}})
+        return records
 
-        if documents is None or distances is None or len(documents[0]) == 0:
-            return None
-
-        filtered_documents: list[list[str]] = []
-
-        for doc_group, distance_group in zip(documents, distances):
-            if not isinstance(doc_group, list) or not isinstance(distance_group, list):
-                continue
-
-            matching_docs = [
-                str(doc)
-                for doc, distance in zip(doc_group, distance_group)
-                if isinstance(distance, (int, float)) and distance <= self.MAX_QUERY_DISTANCE
-            ]
-            filtered_documents.append(matching_docs)
-
-        if len(filtered_documents) == 0 or len(filtered_documents[0]) == 0:
-            return None
-
-        return filtered_documents
+    def query_docs(self, prompt: str, filter: dict | None = None):
+        records = self.query_records(prompt, filter)
+        return [[record["text"] for record in records]] if records else None
 
     def parse_retrieved_docs(self, documents) -> list[str]:
         parsed_docs: list[str] = []
@@ -110,7 +103,7 @@ class ChromaDBHelper:
 
         return parsed_docs
     
-    def query_text(self, prompt: str, filter = None, stage_name: str = "RetrievalStage"):
+    def query_text(self, prompt: str, filter = None, stage_name: str = "ContextRetrieval"):
         docs = self.query_docs(prompt=prompt, filter=filter)
 
         if(docs == None):

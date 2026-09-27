@@ -1,3 +1,4 @@
+from workflow.perception_contract import format_perception_core
 from logger import get_logger
 from workflow.models import AppraisalResult, EmotionResult, InitialContext, PerceptionResult, ResponseResult, RetrievedContext, StrategyResult
 from workflow.stages.base import LLMStage
@@ -20,7 +21,7 @@ class ResponseStage(LLMStage):
             "Respond to the current turn by realizing the selected strategy in character. Do not redo perception, appraisal, emotion, or the conversational goal.",
             [
                 ("Player input", perception.raw_prompt),
-                ("Final perception summary", perception.summary),
+                ("Final perception", format_perception_core(perception.core)),
                 ("Appraisal summary", appraisal.summary),
                 (
                     "Emotional tone",

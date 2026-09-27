@@ -3,6 +3,7 @@ import math
 from dataclasses import fields, is_dataclass
 
 from pydantic import TypeAdapter
+from workflow.perception_contract import validate_perception
 
 from workflow.models import (
     AppraisalResult, EmotionResult, InitialContext, PerceptionResult,
@@ -20,7 +21,6 @@ FIXTURE_TYPES = {
 }
 # Only runtime metadata and fields unused by Response may use dataclass defaults.
 OPTIONAL_FIELDS = {
-    PerceptionResult: {"stage_prompt", "tool_calls", "retrieval_reasoning"},
     RetrievedContext: {field.name for field in fields(RetrievedContext)},
     AppraisalResult: {"stage_prompt"},
     EmotionResult: {"stage_prompt"},
@@ -71,18 +71,15 @@ def resolve_response_inputs(prompt, character_name):
         for name, kind in FIXTURE_TYPES.items():
             key = name + "_payload"
             payload = inputs.get(key)
-            if name == "perception" and isinstance(payload, dict):
-                payload = dict(payload)
-                if "raw_prompt" in payload and payload["raw_prompt"] != prompt.user_query:
-                    raise ValueError("perception_payload.raw_prompt must match user_query.")
-                payload["raw_prompt"] = prompt.user_query
+            if name == "perception":
+                resolved[name] = validate_perception(payload, prompt.user_query)
+                continue
             resolved[name] = construct_fixture(kind, payload, key)
         initial = resolved["initial_context"]
         if initial.character_name != character_name:
             raise ValueError("Response fixture character_name must match the selected character.")
         required_text = {
             "initial_context": ("character_definition", "situation"),
-            "perception": ("summary", "request_type"),
             "appraisal": ("summary",),
             "emotion": ("primary",),
             "strategy": ("intention", "conversation_goal", "risk_level", "disclosure_level",
@@ -94,8 +91,7 @@ def resolve_response_inputs(prompt, character_name):
                     raise ValueError(f"{name}_payload.{field_name} must not be blank.")
         retrieval = resolved["retrieved_context"]
         if not retrieval.combined_context.strip() and any(
-            getattr(retrieval, name).strip() for name in OPTIONAL_FIELDS[RetrievedContext]
-            if name != "combined_context"
+            getattr(retrieval, name).strip() for name in ("memory_context", "relationship_context", "knowledge_context", "social_context")
         ):
             raise ValueError("Response consumes combined_context; source evidence requires an explicit combined_context.")
         return resolved

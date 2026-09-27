@@ -1,12 +1,11 @@
 from logger import get_logger
-from workflow.models import InitialContext, TurnInput, TurnResult
+from workflow.enrichment import ContextEnrichment
+from workflow.models import InitialContext, RetrievedContext, TurnInput, TurnResult
 from workflow.stages import (
     AppraisalStage,
-    GapAnalysisStage,
     InitialContextStage,
     PerceptionStage,
     ResponseStage,
-    RetrievalStage,
     StrategyStage,
     TerminalUpdateStage,
 )
@@ -18,11 +17,10 @@ class TurnPipeline:
     def __init__(self, character):
         self.character = character
         self.initial_context_stage = InitialContextStage(character)
-        self.perception_stage = PerceptionStage(character)
-        self.gap_analysis_stage = GapAnalysisStage(character)
-        self.retrieval_stage = RetrievalStage(character)
-        self.appraisal_stage = AppraisalStage(character)
-        self.strategy_stage = StrategyStage(character)
+        self.enrichment = ContextEnrichment(character)
+        self.perception_stage = PerceptionStage(character, self.enrichment)
+        self.appraisal_stage = AppraisalStage(character, self.enrichment)
+        self.strategy_stage = StrategyStage(character, self.enrichment)
         self.response_stage = ResponseStage(character)
         self.terminal_update_stage = TerminalUpdateStage(character)
 
@@ -68,51 +66,13 @@ class TurnPipeline:
             stage_name = "PerceptionStage"
             stage_payload = {"prompt": turn_input.prompt}
             self._log_stage_start(stage_name, stage_payload)
-            perception = self.perception_stage.run(turn_input, initial_context)
+            retrieved_context = RetrievedContext(initial_context=initial_context)
+            perception = self.perception_stage.run(turn_input, initial_context, retrieved_context)
             self._log_stage_completion(
                 stage_name,
                 perception,
-                f"tool_calls={len(perception.tool_calls)}, raw_prompt_length={len(perception.raw_prompt)}",
+                f"raw_prompt_length={len(perception.raw_prompt)}",
             )
-
-            stage_name = "GapAnalysisStage"
-            stage_payload = perception
-            self._log_stage_start(stage_name, stage_payload)
-            gap_analysis = self.gap_analysis_stage.run(perception)
-            self._log_stage_completion(
-                stage_name,
-                gap_analysis,
-                f"tool_calls={len(gap_analysis.tool_calls)}",
-            )
-
-            stage_name = "RetrievalStage"
-            stage_payload = gap_analysis
-            self._log_stage_start(stage_name, stage_payload)
-            retrieved_context = self.retrieval_stage.run(perception, gap_analysis)
-            self._log_stage_completion(
-                stage_name,
-                retrieved_context,
-                f"combined_context_length={len(retrieved_context.combined_context)}",
-            )
-
-            if len(gap_analysis.tool_calls) > 0:
-                stage_name = "PerceptionStage.reinterpret"
-                stage_payload = {
-                    "prompt": perception.raw_prompt,
-                    "retrieved_context_length": len(retrieved_context.combined_context),
-                }
-                self._log_stage_start(stage_name, stage_payload)
-                perception = self.perception_stage.run(
-                    turn_input,
-                    initial_context,
-                    retrieved_context=retrieved_context,
-                    stage_name=stage_name,
-                )
-                self._log_stage_completion(
-                    stage_name,
-                    perception,
-                    f"tool_calls={len(perception.tool_calls)}, raw_prompt_length={len(perception.raw_prompt)}",
-                )
 
             stage_name = "AppraisalStage"
             stage_payload = perception
@@ -186,7 +146,6 @@ class TurnPipeline:
         return TurnResult(
             initial_context=initial_context,
             perception=perception,
-            gap_analysis=gap_analysis,
             retrieved_context=retrieved_context,
             appraisal=appraisal,
             emotion=emotion,

@@ -82,43 +82,24 @@ def stage_prompt_path_for(character: Character, data_dir: Path) -> Path:
 
 
 def build_smoke_stage_prompts(character: Character) -> list[StageTestPrompt]:
-    return [
-        StageTestPrompt(
-            user_query="Hello there.",
-            source_category=PromptCategory.GENERAL,
-            target_stage=StageName.RETRIEVAL_RUN,
-            expectation_mode=StageExpectationMode.DETERMINISTIC,
-            deterministic_checks=[
-                {
-                    "metric_name": "no_context_without_tool_calls",
-                    "path": "stage_output.combined_context",
-                    "operator": "equals",
-                    "value": "no information",
-                }
-            ],
-            stage_inputs={
-                "perception_payload": {
-                    "npc_perception": {
-                        "perceived_intent": ["greet"],
-                        "perceived_attitude": ["neutral"],
-                        "player_intent": "greet",
-                        "player_emotion": "neutral",
-                        "threat_signal": "none",
-                        "manipulation_signal": "none",
-                        "topic_sensitivity": "normal",
-                    },
-                    "request_type": "greeting",
-                    "topic": {"primary": "greeting", "related": [], "retrieval_queries": []},
-                },
-                "gap_analysis_payload": {"tool_calls": []},
-            },
-            notes=f"Smoke fallback because no stage-aware suite exists for {character.name}.",
-        )
-    ]
+    return [StageTestPrompt(
+        user_query="Hello there.", source_category=PromptCategory.GENERAL,
+        target_stage=StageName.PERCEPTION, expectation_mode=StageExpectationMode.DETERMINISTIC,
+        deterministic_checks=[{
+            "metric_name": "greeting_needs_no_enrichment",
+            "path": "execution_context.retrieved_context.history.0.request",
+            "operator": "equals", "value": "",
+        }],
+        notes=f"A plain greeting should not require retrieval for {character.name}.",
+    )]
 
 
-def read_stage_prompts(character: Character) -> list[StageTestPrompt]:
-    path = stage_prompt_path_for(character, Path("./data/test_data"))
+def read_stage_prompts(character: Character, suite_path: Path | None = None) -> list[StageTestPrompt]:
+    path = suite_path or stage_prompt_path_for(character, Path("./data/test_data"))
+    if suite_path is not None and not path.exists():
+        raise FileNotFoundError(f"Stage suite not found: {path}")
+    if path.suffix == ".json":
+        return [StageTestPrompt(**row) for row in json.loads(path.read_text(encoding="utf-8"))]
     if not path.exists():
         legacy_path = path.with_name(f"{character.name.lower()}_testsuite.csv")
         if legacy_path.exists():
@@ -203,8 +184,8 @@ def select_stage(prompts: list[StageTestPrompt], selected_stage_name: str | None
     )
 
 
-def test_agent(character: Character, selected_stage_name: str | None = None) -> None:
-    all_prompts = read_stage_prompts(character)
+def test_agent(character: Character, selected_stage_name: str | None = None, suite_path: Path | None = None) -> None:
+    all_prompts = read_stage_prompts(character, suite_path)
     selected_stage = select_stage(all_prompts, selected_stage_name)
     prompts_to_run = filter_prompts_by_stage(all_prompts, selected_stage)
     if len(prompts_to_run) == 0:
@@ -218,11 +199,12 @@ def test_agent(character: Character, selected_stage_name: str | None = None) -> 
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Evaluate NPC cognitive stages and their local enrichment.")
+    parser.add_argument("--suite", type=Path, help="Optional stage suite JSON or CSV")
+    parser.add_argument("--character", help="Character name; otherwise select interactively")
+    parser.add_argument("--stage", help="Cognitive stage name or 'All stages'")
+    args = parser.parse_args()
     all_characters = read_characters(Path("./data/character_data_cop.csv"))
-    selected_character = choose_option(
-        title="Choose character to test:",
-        options=all_characters,
-        label_for_option=lambda character: character.get("name", ""),
-    )
+    selected_character = select_character(all_characters, args.character)
     npc = Character(selected_character, situation)
-    test_agent(npc)
+    test_agent(npc, args.stage, args.suite)

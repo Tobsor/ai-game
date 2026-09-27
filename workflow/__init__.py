@@ -1,11 +1,13 @@
 from workflow.pipeline import TurnPipeline
+from workflow.enrichment import ContextEnrichment, ContextRetriever, GapAnalysis
 from workflow.models import (
     TurnInput,
     InitialContext,
-    NPCPerception,
-    PerceptionTopic,
+    PerceptionCore,
+    PerceivedPlayerEmotion,
     PerceptionResult,
-    GapAnalysisResult,
+    ContextEvidence,
+    EnrichmentDecision,
     RetrievedContext,
     AppraisalResult,
     EmotionResult,
@@ -16,13 +18,17 @@ from workflow.models import (
 )
 
 __all__ = [
+    "ContextEnrichment",
+    "ContextRetriever",
+    "GapAnalysis",
     "TurnPipeline",
     "TurnInput",
     "InitialContext",
-    "NPCPerception",
-    "PerceptionTopic",
+    "PerceptionCore",
+    "PerceivedPlayerEmotion",
     "PerceptionResult",
-    "GapAnalysisResult",
+    "ContextEvidence",
+    "EnrichmentDecision",
     "RetrievedContext",
     "AppraisalResult",
     "EmotionResult",

@@ -1,52 +1,41 @@
+from workflow.enrichment import GapAnalysis
+from workflow.perception_contract import format_perception_core
 from typing import Any
+import math
 
 from logger import get_logger
 from workflow.models import AppraisalResult, EmotionResult, InitialContext, PerceptionResult, RetrievedContext
-from workflow.stages.base import LLMStage
+from workflow.stages.base import EnrichedStage
 from workflow.stages.prompting import format_prompt
 
 logger = get_logger(__name__)
 
 
-class AppraisalStage(LLMStage):
+class AppraisalStage(EnrichedStage):
     def get_prompt(
         self,
         initial_context: InitialContext,
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
     ) -> str:
-        return format_prompt(
+        return GapAnalysis.prompt(format_prompt(
             "Evaluate what the final perceived player message means for this NPC, then derive the immediate emotional reaction. Do not generate dialogue or a response strategy.",
             [
                 ("Player input", perception.raw_prompt),
-                (
-                    "Final perception",
-                    "\n".join([
-                        f"summary={perception.summary}",
-                        f"perceived_intent={', '.join(perception.npc_perception.perceived_intent)}",
-                        f"perceived_attitude={', '.join(perception.npc_perception.perceived_attitude)}",
-                        f"player_intent={perception.npc_perception.player_intent}",
-                        f"player_emotion={perception.npc_perception.player_emotion}",
-                        f"request_type={perception.request_type}",
-                        f"topic_primary={perception.topic.primary}",
-                        f"topic_related={', '.join(perception.topic.related)}",
-                        f"retrieval_queries={', '.join(perception.topic.retrieval_queries)}",
-                        f"threat_signal={perception.npc_perception.threat_signal}",
-                        f"manipulation_signal={perception.npc_perception.manipulation_signal}",
-                        f"topic_sensitivity={perception.npc_perception.topic_sensitivity}",
-                    ]),
-                ),
+                ("Final perception", format_perception_core(perception.core)),
                 ("Situation", initial_context.situation),
                 ("Current sentiment towards player", initial_context.sentiment),
                 ("Relationship summary", initial_context.relationship_summary),
                 ("Persistent goals and motivations", "\n".join(initial_context.active_goals)),
                 ("Belief state", "\n".join(initial_context.belief_state)),
+                ("Recent conversation state", "\n".join(initial_context.recent_turns)),
                 ("Character definition", initial_context.character_definition),
                 ("Retrieved context", retrieved_context.combined_context),
                 (
                     "Appraisal boundaries",
                     "\n".join([
                         "Appraisal answers what the perceived situation means for the NPC personally.",
+                        "Never redo finalized Perception. Conflicting evidence may produce emotional tension or confusion without correcting it.",
                         "Emotion answers how the NPC feels as a result of that appraisal.",
                         "Do not create the immediate conversational goal; that belongs to the strategy stage.",
                         "Use relevance, threat, control, attribution_responsibility, and emotion intensity in the range 0..1.",
@@ -75,9 +64,9 @@ class AppraisalStage(LLMStage):
                         "}",
                     ]),
                 ),
-                ("Expected result", "Return only valid JSON matching the shown structure. Do not return markdown, prose, explanations, or code fences."),
+                ("Expected result", "Return only valid JSON matching the shown cognitive structure plus the enrichment fields below. Do not return markdown, prose outside JSON, or code fences."),
             ],
-        )
+        ), retrieved_context)
 
     def run(
         self,
@@ -85,20 +74,32 @@ class AppraisalStage(LLMStage):
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
     ) -> tuple[AppraisalResult, EmotionResult]:
-        logger.verbose("Running appraisal stage")
-        stage_prompt = self.get_prompt(initial_context, perception, retrieved_context)
-        response = self.character.agent.run_prompt(
-            prompt=stage_prompt,
-            stage_name="AppraisalStage",
-            payload={
-                "input_prompt": perception.raw_prompt,
-                "stage_prompt": stage_prompt,
-            },
+        return self.enrichment.run(
+            stage_name="AppraisalStage", initial_context=initial_context, context=retrieved_context,
+            build_prompt=lambda: self.get_prompt(initial_context, perception, retrieved_context),
+            parse_result=self.parse_result,
         )
-        parsed_response = self.character.agent.parse_output(response.content, fallback={})
+
+    def parse_result(self, parsed_response, response, stage_prompt):
+        if not isinstance(parsed_response.get("appraisal"), dict) or not isinstance(parsed_response.get("emotion"), dict):
+            raise ValueError("Appraisal requires appraisal and emotion objects")
         appraisal_payload = self.read_dict(parsed_response.get("appraisal"))
         emotion_payload = self.read_dict(parsed_response.get("emotion"))
         attribution_payload = self.read_dict(appraisal_payload.get("attribution"))
+        for payload, key in ((appraisal_payload, "summary"), (emotion_payload, "primary"), (attribution_payload, "source")):
+            if not isinstance(payload.get(key), str) or not payload[key].strip():
+                raise ValueError(f"Appraisal requires a nonblank {key}")
+        secondary = emotion_payload.get("secondary")
+        if not isinstance(secondary, list) or not all(isinstance(item, str) and item.strip() for item in secondary):
+            raise ValueError("Emotion secondary must be a list of nonblank strings")
+        for payload, key, minimum in [
+            *((appraisal_payload, key, 0) for key in ("relevance", "threat", "control")),
+            *((appraisal_payload, key, -1) for key in ("valence", "goal_impact", "social_self_impact")),
+            (emotion_payload, "intensity", 0), (attribution_payload, "responsibility", 0),
+        ]:
+            value = payload.get(key)
+            if type(value) not in (int, float) or not math.isfinite(value) or not minimum <= value <= 1:
+                raise ValueError(f"Appraisal {key} must be a finite number in {minimum}..1")
 
         appraisal = AppraisalResult(
             relevance=self.read_float(appraisal_payload, "relevance", 0.0, 0.0, 1.0),

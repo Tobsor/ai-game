@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass
@@ -21,38 +21,44 @@ class InitialContext:
 
 
 @dataclass
-class NPCPerception:
-    perceived_intent: list[str] = field(default_factory=list)
-    perceived_attitude: list[str] = field(default_factory=list)
-    player_intent: str = "unknown"
-    player_emotion: str = "neutral"
-    threat_signal: str = "none"
-    manipulation_signal: str = "none"
-    topic_sensitivity: str = "normal"
+class PerceivedPlayerEmotion:
+    primary: str
+    intensity: Literal["low", "medium", "high"]
+    summary: str
 
 
 @dataclass
-class PerceptionTopic:
-    primary: str = ""
-    related: list[str] = field(default_factory=list)
-    retrieval_queries: list[str] = field(default_factory=list)
+class PerceptionCore:
+    situation_summary: str
+    interaction_type: str
+    topic: str
+    perceived_intent: str
+    perceived_player_attitude: str
+    perceived_player_emotion: PerceivedPlayerEmotion
+    perceived_threat: Literal["none", "low", "medium", "high"]
+    perceived_manipulation: Literal["none", "low", "medium", "high"]
 
 
 @dataclass
 class PerceptionResult:
     raw_prompt: str
-    stage_prompt: str = ""
-    summary: str = ""
-    npc_perception: NPCPerception = field(default_factory=NPCPerception)
-    topic: PerceptionTopic = field(default_factory=PerceptionTopic)
-    request_type: str = "general"
-    tool_calls: list[Any] = field(default_factory=list)
-    retrieval_reasoning: str = ""
+    core: PerceptionCore
 
 
 @dataclass
-class GapAnalysisResult:
-    tool_calls: list[Any] = field(default_factory=list)
+class ContextEvidence:
+    id: str
+    text: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+    distance: float | None = None
+    stage: str = ""
+
+
+@dataclass
+class EnrichmentDecision:
+    stage: str
+    request: str = ""
+    reason: str = ""
 
 
 @dataclass
@@ -62,6 +68,9 @@ class RetrievedContext:
     relationship_context: str = ""
     knowledge_context: str = ""
     social_context: str = ""
+    initial_context: InitialContext | None = None
+    evidence: list[ContextEvidence] = field(default_factory=list)
+    history: list[EnrichmentDecision] = field(default_factory=list)
 
 
 @dataclass
@@ -132,7 +141,6 @@ class TerminalUpdateResult:
 class TurnResult:
     initial_context: InitialContext
     perception: PerceptionResult
-    gap_analysis: GapAnalysisResult
     retrieved_context: RetrievedContext
     appraisal: AppraisalResult
     emotion: EmotionResult

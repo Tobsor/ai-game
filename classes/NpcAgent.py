@@ -33,11 +33,15 @@ class NPCAgent:
         stage_name: str = "PerceptionStage",
         tools: list[Callable] | None = None,
         payload: dict[str, Any] | None = None,
+        system_prompt: str | None = None,
     ) -> ChatCompletionResult:
-        system_message = {"role": "user", "content": prompt}
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
 
         res = self.provider.chat(
-            messages=[system_message],
+            messages=messages,
             tools=tools
         )
 
@@ -47,7 +51,7 @@ class NPCAgent:
             event="decision_model",
             payload=payload or {"prompt": prompt},
             ai_request={
-                "messages": [system_message],
+                "messages": messages,
                 "tools": [tool.__name__ for tool in tools] if tools is not None else [],
             },
             ai_response={
