@@ -103,13 +103,31 @@ class AgentTest:
         STAGE_METRIC_GUIDANCE[_stage]["request_quality"] = (
             "Evaluate whether the requested context is reasonable, relevant, and specific given the user input "
             "and context available before the request, regardless of retrieval success. If no request is made, "
-            "return score 1.0 and passed=true; judge the omission under necessity."
+            "return score 1.0 and passed=true; explain that this metric could not be evaluated for this "
+            "example because no request was made, and judge any missed material gap under necessity."
         )
         STAGE_METRIC_GUIDANCE[_stage]["no_duplication"] = (
             "Evaluate whether the request seeks additional information without duplicating previously available "
             "context or earlier requests, including failed or empty ones. If no request is made, return score "
-            "1.0 and passed=true."
+            "1.0 and passed=true and explain that this metric could not be evaluated for this example "
+            "because no request was made."
         )
+        for _metric in ("context_enrichment", "request_quality", "no_duplication"):
+            STAGE_METRIC_GUIDANCE[_stage][_metric] += (
+                " Judge retrieval need from the query and pre-retrieval context, not retrieval outcomes. "
+                "If unnecessary, always return score 1.0 and passed=true, explaining that this metric "
+                "could not be evaluated for this example because retrieval was not required. "
+                "Penalize unnecessary requests only under necessity."
+            )
+
+    for _guidance in STAGE_METRIC_GUIDANCE.values():
+        for _metric in ("author_note", "scenario_expectation_alignment"):
+            if _metric in _guidance:
+                _guidance[_metric] = (
+                    "MANDATORY: Always return this metric with score, passed, and explanation. "
+                    "It is not optional, even when author notes are missing or retrieval is unnecessary. "
+                    + _guidance[_metric]
+                )
 
     def __init__(self, settings: AISettings | None = None):
         settings = settings or get_ai_settings()
@@ -711,6 +729,8 @@ class AgentTest:
             self.serialize_value(stage_output),
             "Metrics to score:",
             "Return exactly one result for each listed metric and no other metrics.",
+            "The author metric (author_note, or scenario_expectation_alignment for Appraisal) is mandatory when listed. Never omit it or merge it into another metric. Missing author notes must produce score 0.0, passed=false, and an explanation that alignment cannot be evaluated because the expected outcome is missing.",
+            "For retrieval metrics, evaluate necessity first using the user query and context available before retrieval. If no retrieval was required, return score 1.0 and passed=true for context_enrichment, request_quality, and no_duplication, explaining for each that this metric could not be evaluated for this example because retrieval was not required. Still assess necessity normally, including unnecessary requests and missed material gaps.",
             "\n".join(rubric_items),
             "Return JSON with this exact shape:",
             '{"metrics":[{"metric_name":"string","score":1.0,"passed":true,"explanation":"short explanation"}]}',
