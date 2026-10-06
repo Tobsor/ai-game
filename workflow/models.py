@@ -75,24 +75,14 @@ class RetrievedContext:
 
 @dataclass
 class AppraisalResult:
-    relevance: float = 0.0
-    valence: float = 0.0
-    goal_impact: float = 0.0
-    social_self_impact: float = 0.0
-    threat: float = 0.0
-    control: float = 0.5
-    attribution_source: str = "unknown"
-    attribution_responsibility: float = 0.0
-    summary: str = ""
-    stage_prompt: str = ""
+    summary: str
+    aspects: list[dict[str, str]] = field(default_factory=list)
 
 
 @dataclass
 class EmotionResult:
-    primary: str = "neutral"
-    secondary: list[str] = field(default_factory=list)
-    intensity: float = 0.0
-    stage_prompt: str = ""
+    components: list[str]
+    summary: str
 
 
 @dataclass

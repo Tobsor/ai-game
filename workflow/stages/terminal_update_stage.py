@@ -240,49 +240,18 @@ class TerminalUpdateStage(LLMStage):
     def build_appraisal_tags(self, appraisal: AppraisalResult | None) -> list[str]:
         if appraisal is None:
             return []
-        tags = ["appraisal", appraisal.attribution_source]
-        if appraisal.relevance >= 0.7:
-            tags.append("high relevance")
-        if appraisal.threat >= 0.5:
-            tags.append("threat")
-        if appraisal.valence < -0.25:
-            tags.append("negative valence")
-        elif appraisal.valence > 0.25:
-            tags.append("positive valence")
-        if appraisal.social_self_impact < -0.25:
-            tags.append("social injury")
-        elif appraisal.social_self_impact > 0.25:
-            tags.append("social boost")
-        return self.combine_tags(tags)
+        return self.combine_tags(["appraisal"], [item["aspect"] for item in appraisal.aspects])
 
     def build_emotion_tags(self, emotion: EmotionResult | None) -> list[str]:
-        if emotion is None:
-            return []
-        return self.combine_tags(["emotion", emotion.primary], emotion.secondary)
+        return self.combine_tags(["emotion"], emotion.components) if emotion else []
 
     def describe_appraisal(self, appraisal: AppraisalResult | None) -> str:
         if appraisal is None:
             return "no appraisal available"
-        return "\n".join([
-            f"relevance={appraisal.relevance}",
-            f"valence={appraisal.valence}",
-            f"goal_impact={appraisal.goal_impact}",
-            f"social_self_impact={appraisal.social_self_impact}",
-            f"threat={appraisal.threat}",
-            f"control={appraisal.control}",
-            f"attribution_source={appraisal.attribution_source}",
-            f"attribution_responsibility={appraisal.attribution_responsibility}",
-            f"summary={appraisal.summary}",
-        ])
+        return "\n".join([appraisal.summary, *[f"{item['aspect']}: {item['evaluation']}" for item in appraisal.aspects]])
 
     def describe_emotion(self, emotion: EmotionResult | None) -> str:
-        if emotion is None:
-            return "no emotional reaction available"
-        return "\n".join([
-            f"primary={emotion.primary}",
-            f"secondary={', '.join(emotion.secondary)}",
-            f"intensity={emotion.intensity}",
-        ])
+        return emotion.summary if emotion else "no emotional reaction available"
 
     def combine_tags(self, *tag_groups: list[str]) -> list[str]:
         combined_tags: list[str] = []

@@ -23,14 +23,7 @@ class ResponseStage(LLMStage):
                 ("Player input", perception.raw_prompt),
                 ("Final perception", format_perception_core(perception.core)),
                 ("Appraisal summary", appraisal.summary),
-                (
-                    "Emotional tone",
-                    "\n".join([
-                        f"primary={emotion.primary}",
-                        f"secondary={', '.join(emotion.secondary)}",
-                        f"intensity={emotion.intensity}",
-                    ]),
-                ),
+                ("Emotional tone", emotion.summary),
                 ("Recent conversation state", "\n".join(initial_context.recent_turns)),
                 ("Retrieved context", retrieved_context.combined_context),
                 (

@@ -4,6 +4,7 @@ from dataclasses import fields, is_dataclass
 
 from pydantic import TypeAdapter
 from workflow.perception_contract import validate_perception
+from workflow.appraisal_contract import validate_appraisal
 
 from workflow.models import (
     AppraisalResult, EmotionResult, InitialContext, PerceptionResult,
@@ -22,8 +23,6 @@ FIXTURE_TYPES = {
 # Only runtime metadata and fields unused by Response may use dataclass defaults.
 OPTIONAL_FIELDS = {
     RetrievedContext: {field.name for field in fields(RetrievedContext)},
-    AppraisalResult: {"stage_prompt"},
-    EmotionResult: {"stage_prompt"},
     StrategyResult: {"new_sentiment", "sentiment_reasoning"},
 }
 
@@ -75,13 +74,17 @@ def resolve_response_inputs(prompt, character_name):
                 resolved[name] = validate_perception(payload, prompt.user_query)
                 continue
             resolved[name] = construct_fixture(kind, payload, key)
+        resolved["appraisal"], resolved["emotion"] = validate_appraisal({
+            "raw_prompt": prompt.user_query, "appraisal": inputs["appraisal_payload"],
+            "emotion": inputs["emotion_payload"],
+        }, prompt.user_query)
         initial = resolved["initial_context"]
         if initial.character_name != character_name:
             raise ValueError("Response fixture character_name must match the selected character.")
         required_text = {
             "initial_context": ("character_definition", "situation"),
             "appraisal": ("summary",),
-            "emotion": ("primary",),
+            "emotion": ("summary",),
             "strategy": ("intention", "conversation_goal", "risk_level", "disclosure_level",
                          "social_strategy", "tone", "verbosity", "conversation_move"),
         }

@@ -66,7 +66,7 @@ class AgentTest:
         },
         StageName.APPRAISAL: {
             "character_circumstance_fit": "Is the interpretation plausible for {character_name} given the supplied character definition, situation, sentiment, and relationship? Judge personal significance, not a universal stimulus-to-emotion rule.",
-            "emotional_coherence": "Does the stage output itself clearly explain or summarize {character_name}'s emotional state: what they feel, how strongly, and why the appraised situation produces that reaction? Require a concrete, context-grounded explanation consistent with the reported emotion and intensity; Penalize vague or generic explanations (for example, 'this affects me' or 'I have mixed feelings'). Explain the specific omission or vagueness in the metric feedback. Allow concise summaries, natural-language descriptions of intensity, and multiple reactions or mixed emotions when clearly explained and supported by the supplied circumstances.",
+            "emotional_coherence": "Does the stage output itself clearly explain or summarize {character_name}'s emotional state: what they feel, how strongly, and why the appraised situation produces that reaction? Require a concrete, context-grounded explanation consistent with emotion.components and the authoritative emotion.summary; Penalize vague or generic explanations (for example, 'this affects me' or 'I have mixed feelings'). Explain the specific omission or vagueness in the metric feedback. Allow concise summaries, natural-language descriptions of intensity, and multiple reactions or mixed emotions when clearly explained and supported by the supplied circumstances.",
             "goals_beliefs_alignment": "Does {character_name} evaluate consequences through his supplied goals, motivations, and beliefs, including pride and self-interest where relevant? Do not assume beliefs absent from the inputs.",
             "grounding_attribution": "Does the appraisal use relevant supplied evidence, preserve uncertainty, avoid unsupported assumptions, and assign responsibility plausibly from {character_name}'s perspective? Distinguish his biased blame from established facts.",
             "downstream_usefulness": "Does the appraisal output itself provide clear, coherent personal significance that could inform later stages without generating strategy or dialogue? Do not require or infer downstream execution.",
@@ -299,7 +299,11 @@ class AgentTest:
             raise ValueError("Strategy fixture character_name must match the selected character.")
         perception = fixtures["perception"]
         retrieved_context = fixtures["retrieved_context"]
-        appraisal, emotion = fixtures["appraisal"], fixtures["emotion"]
+        from workflow.appraisal_contract import validate_appraisal
+        appraisal, emotion = validate_appraisal({
+            "raw_prompt": prompt.user_query, "appraisal": prompt.stage_inputs["appraisal_payload"],
+            "emotion": prompt.stage_inputs["emotion_payload"],
+        }, prompt.user_query)
         with stage_enrichment(character.pipeline.strategy_stage, prompt.stage_inputs):
             strategy = character.pipeline.strategy_stage.run(initial_context, perception, retrieved_context, appraisal, emotion)
         return strategy, {
@@ -369,27 +373,8 @@ class AgentTest:
         payload = self.normalize_appraisal_payload(payload)
         emotion_payload = self.normalize_emotion_payload(self.get_test_payload(prompt, "emotion") or payload.get("emotion", {}))
         appraisal_payload = payload.get("appraisal", payload)
-        attribution_payload = appraisal_payload.get("attribution", {})
-        if not isinstance(attribution_payload, dict):
-            attribution_payload = {}
-        return (
-            AppraisalResult(
-                relevance=self.read_float(appraisal_payload, "relevance", 0.0, 0.0, 1.0),
-                valence=self.read_float(appraisal_payload, "valence", 0.0, -1.0, 1.0),
-                goal_impact=self.read_float(appraisal_payload, "goal_impact", 0.0, -1.0, 1.0),
-                social_self_impact=self.read_float(appraisal_payload, "social_self_impact", 0.0, -1.0, 1.0),
-                threat=self.read_float(appraisal_payload, "threat", 0.0, 0.0, 1.0),
-                control=self.read_float(appraisal_payload, "control", 0.5, 0.0, 1.0),
-                attribution_source=self.read_string(attribution_payload, "source", "unknown"),
-                attribution_responsibility=self.read_float(attribution_payload, "responsibility", 0.0, 0.0, 1.0),
-                summary=self.read_string(appraisal_payload, "summary", ""),
-            ),
-            EmotionResult(
-                primary=self.read_string(emotion_payload, "primary", "neutral"),
-                secondary=self.read_string_list(emotion_payload, "secondary"),
-                intensity=self.read_float(emotion_payload, "intensity", 0.0, 0.0, 1.0),
-            ),
-        )
+        from workflow.appraisal_contract import validate_appraisal
+        return validate_appraisal({"raw_prompt": prompt.user_query, "appraisal": appraisal_payload, "emotion": emotion_payload}, prompt.user_query)
 
     def simulate_strategy_result(self, character: Character, prompt: StageTestPrompt) -> StrategyResult:
         payload = self.get_test_payload(prompt, "strategy")
@@ -479,11 +464,7 @@ class AgentTest:
     def normalize_emotion_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict):
             payload = {}
-        return {
-            "primary": payload.get("primary", "neutral"),
-            "secondary": payload.get("secondary", []),
-            "intensity": payload.get("intensity", 0.0),
-        }
+        return payload
 
     def normalize_strategy_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {

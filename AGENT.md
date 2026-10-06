@@ -81,7 +81,7 @@ The NPC runs a specific routine to simulate thinking and decision process to gen
 6. Terminal Update persists relevant state as before.
 
 `ContextEnrichment`, `GapAnalysis` (shared prompt/validation), and `ContextRetriever` are
-reusable helpers, not pipeline stages. A stage emits its normal cognitive JSON plus
+reusable helpers, not pipeline stages. Perception and Strategy emit their normal cognitive JSON plus
 `context_request` (one concise string, empty for no gap) and `gap_reason` (a brief explanation).
 The helper separates these fields from the cognitive result. Each eligible stage gets
 at most one backend request and one revision. No retries or query splitting occur.
@@ -176,3 +176,13 @@ If asked to implement new agent behaviors:
 - Don’t add external dependencies or network calls without approval.
 - Don't change system prompt snippets without approval or explicitly instructed to do so.
 - Don't add unit testing.
+
+## Semantic Appraisal contract
+Appraisal emits raw_prompt, appraisal (summary and dynamic aspect/evaluation pairs),
+emotion (components and authoritative prose summary), and retrieval_topics.
+The shared helper extracts topics into one combined backend request and permits one
+refinement. Final cognition excludes retrieval metadata and stage_prompt.
+Strategy consumes full appraisal and emotion; Response consumes their summaries.
+Terminal tags use aspect names and emotion components without numerical thresholds.
+Appraisal refinement always uses the same provider and model as primary Appraisal,
+with a dedicated refinement system prompt and compact context prompt.

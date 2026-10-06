@@ -81,7 +81,7 @@ class TurnPipeline:
             self._log_stage_completion(
                 stage_name,
                 {"appraisal": appraisal, "emotion": emotion},
-                f"appraisal_relevance={appraisal.relevance}, emotion={emotion.primary}:{emotion.intensity}",
+                f"appraisal={appraisal.summary}, emotion={emotion.summary}",
             )
 
             stage_name = "StrategyStage"

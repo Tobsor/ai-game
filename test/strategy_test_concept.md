@@ -8,7 +8,7 @@ Additional enrichment scenarios are in `test/enrichment_scenarios.json`.
 Each row contains `scenario_id` and five objects: `initial_context_payload`,
 `perception_payload`, `retrieved_context_payload`, `appraisal_payload`, and
 `emotion_payload`. Their fields match the dataclasses in `workflow/models.py`;
-appraisal uses flat `attribution_source` and `attribution_responsibility` fields.
+appraisal uses prose `summary` and dynamic `aspects`; emotion uses `components` and an authoritative prose `summary`.
 The perception fixture includes `raw_prompt` and `core`; its raw prompt must exactly match the CSV's `user_query`. All nested fields are validated strictly by the shared perception validator. Strategy sees the complete core and raw prompt, with shared evidence.
 An empty retrieved-context object explicitly means no recalled information.
 Missing or incorrectly typed payloads fail before strategy generation. No context

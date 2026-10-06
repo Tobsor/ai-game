@@ -92,3 +92,23 @@ Stage evaluation uses controlled enrichment evidence by default (empty when abse
 selects the real backend. Scenario notes are judge-only, never injected into NPC reasoning.
 The judge evaluates stage-specific necessity, reuse, subjectivity, fixed upstream reasoning
 and fallback quality alongside the existing cognitive metrics. Response remains isolated.
+
+### Semantic Appraisal
+
+Appraisal returns `raw_prompt`, `appraisal.summary`, dynamic `appraisal.aspects`
+(each an `aspect` and prose `evaluation`), `emotion.components`, `emotion.summary`,
+and `retrieval_topics`. Summaries communicate personal significance and immediate
+feelings; there are no numerical dimensions, emotion hierarchy, or generated
+`stage_prompt` fields. Finalized Perception remains authoritative.
+
+The existing enrichment helper combines Appraisal topics into one retrieval request,
+then performs at most one compact refinement call. The refinement includes NPC state,
+final Perception, the original appraisal, prior evidence, requested topics and new
+records. It can revise aspects and emotions but cannot plan Strategy or reinterpret
+Perception. Refinement always uses the same provider and model as primary Appraisal,
+with a dedicated refinement system prompt and compact context prompt. There is no
+alternate-model configuration.
+
+Retrieval metadata stays in shared history, outside finalized appraisal/emotion.
+Strategy sees complete appraisal and emotion; Response sees their prose summaries.
+Terminal state tags derive from dynamic aspects and emotion components.

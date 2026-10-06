@@ -1,3 +1,5 @@
+import json
+from dataclasses import asdict
 from workflow.enrichment import GapAnalysis
 from workflow.perception_contract import format_perception_core
 from logger import get_logger
@@ -30,35 +32,15 @@ class StrategyStage(EnrichedStage):
         emotion: EmotionResult,
     ) -> str:
         return GapAnalysis.prompt(format_prompt(
-            "Choose the NPC's high-level response strategy based on final perception, appraisal, emotional reaction, and context. Do not redo perception, appraisal, or emotion.",
+            "Choose the NPC's high-level response strategy based on final perception, appraisal, emotional reaction, and context. Treat finalized appraisal and emotion as authoritative. Do not redo perception, appraisal, or emotion or reconstruct numerical ratings.",
             [
                 ("Player input", perception.raw_prompt),
                 ("Character definition", initial_context.character_definition),
                 ("Situation", initial_context.situation),
                 ("Belief state", "\n".join(initial_context.belief_state)),
                 ("Compact final perception", format_perception_core(perception.core)),
-                (
-                    "Appraisal",
-                    "\n".join([
-                        f"relevance={appraisal.relevance}",
-                        f"valence={appraisal.valence}",
-                        f"goal_impact={appraisal.goal_impact}",
-                        f"social_self_impact={appraisal.social_self_impact}",
-                        f"threat={appraisal.threat}",
-                        f"control={appraisal.control}",
-                        f"attribution_source={appraisal.attribution_source}",
-                        f"attribution_responsibility={appraisal.attribution_responsibility}",
-                        f"summary={appraisal.summary}",
-                    ]),
-                ),
-                (
-                    "Emotional reaction",
-                    "\n".join([
-                        f"primary={emotion.primary}",
-                        f"secondary={', '.join(emotion.secondary)}",
-                        f"intensity={emotion.intensity}",
-                    ]),
-                ),
+                ("Appraisal", json.dumps(asdict(appraisal), ensure_ascii=False)),
+                ("Emotional reaction", json.dumps(asdict(emotion), ensure_ascii=False)),
                 ("Character sentiment", initial_context.sentiment),
                 ("Relationship summary", initial_context.relationship_summary),
                 ("Persistent goals and motivations", "\n".join(initial_context.active_goals)),

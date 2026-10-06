@@ -141,7 +141,7 @@ def appraisal_execution_context(prompt, resolved):
 def run_appraisal(character, resolved, inputs=None):
     with stage_enrichment(character.pipeline.appraisal_stage, inputs or {}):
         appraisal, emotion = character.pipeline.appraisal_stage.run(*resolved)
-    return {"appraisal": appraisal, "emotion": emotion}
+    return {"raw_prompt": resolved[1].raw_prompt, "appraisal": appraisal, "emotion": emotion, "retrieval_topics": []}
 
 
 def parse_appraisal_judgment(raw_output, active_metrics):

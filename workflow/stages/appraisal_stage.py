@@ -1,7 +1,7 @@
+import json
+from dataclasses import asdict
 from workflow.enrichment import GapAnalysis
 from workflow.perception_contract import format_perception_core
-from typing import Any
-import math
 
 from logger import get_logger
 from workflow.models import AppraisalResult, EmotionResult, InitialContext, PerceptionResult, RetrievedContext
@@ -12,6 +12,20 @@ logger = get_logger(__name__)
 
 
 class AppraisalStage(EnrichedStage):
+    REFINEMENT_SYSTEM_PROMPT = """Appraisal refinement
+Refine the primary Appraisal using the requested and newly retrieved NPC context.
+Treat finalized Perception as authoritative; never reinterpret the player's intent.
+Preserve supported aspects, refine or remove contradicted provisional aspects, and add
+new personally meaningful aspects where warranted. Update the personal-significance
+summary and immediate emotional state together, from the NPC's subjective perspective.
+Use concise prose and emotion components, without numerical ratings or emotion hierarchy.
+Emotion summary is authoritative. Do not formulate conversational goals, plans, actions or dialogue.
+Return complete final JSON: unchanged raw_prompt, appraisal {summary, aspects:
+[{aspect, evaluation}]}, emotion {components, summary}, and retrieval_topics: [].
+No further retrieval is possible; preserve uncertainty where evidence is insufficient.
+Do not output stage_prompt, context_request or gap_reason.
+"""
+
     def get_prompt(
         self,
         initial_context: InitialContext,
@@ -38,33 +52,28 @@ class AppraisalStage(EnrichedStage):
                         "Never redo finalized Perception. Conflicting evidence may produce emotional tension or confusion without correcting it.",
                         "Emotion answers how the NPC feels as a result of that appraisal.",
                         "Do not create the immediate conversational goal; that belongs to the strategy stage.",
-                        "Use relevance, threat, control, attribution_responsibility, and emotion intensity in the range 0..1.",
-                        "Use valence, goal_impact, and social_self_impact in the range -1..1.",
+                        "Evaluate from the NPC's subjective perspective using character, beliefs, history, relationships, goals and available memories.",
+                        "Use concise meaningful prose. Appraisal summary is the compact downstream conclusion.",
+                        "Identify only personally activated aspects; preserve mixed implications without numerical ratings or a fixed taxonomy.",
+                        "Emotion summary is authoritative: describe immediate feelings, targets, tensions and relative strength naturally in prose.",
+                        "Emotion components are supporting keywords, without a primary/secondary hierarchy or universal intensity.",
+                        "Identify significance, validation, opportunities or obstacles, never conversational goals, plans, actions or dialogue.",
+                        "Request descriptive retrieval_topics only for missing personal significance context, such as prior promises or current motivations.",
+                        "Never retrieve to reinterpret player intent or decide how to exploit the situation; Perception is authoritative and Strategy decides behavior.",
                     ]),
                 ),
                 (
                     "Expected JSON output",
                     "\n".join([
                         "{",
-                        '  "appraisal": {',
-                        '    "relevance": 0.0,',
-                        '    "valence": 0.0,',
-                        '    "goal_impact": 0.0,',
-                        '    "social_self_impact": 0.0,',
-                        '    "threat": 0.0,',
-                        '    "control": 0.5,',
-                        '    "attribution": {"source": "unknown", "responsibility": 0.0},',
-                        '    "summary": "short prose description"',
-                        "  },",
-                        '  "emotion": {',
-                        '    "primary": "neutral",',
-                        '    "secondary": [],',
-                        '    "intensity": 0.0',
-                        "  }",
+                        '  "raw_prompt": "exact original player input",',
+                        '  "appraisal": {"summary": "personal significance", "aspects": [{"aspect": "self_image", "evaluation": "contextual personal meaning"}]},',
+                        '  "emotion": {"components": ["pleased", "proud"], "summary": "immediate emotional consequence in contextual prose"},',
+                        '  "retrieval_topics": []',
                         "}",
                     ]),
                 ),
-                ("Expected result", "Return only valid JSON matching the shown cognitive structure plus the enrichment fields below. Do not return markdown, prose outside JSON, or code fences."),
+                ("Expected result", "Return only valid JSON matching the shown cognitive structure including retrieval_topics. Do not return markdown, prose outside JSON, or code fences."),
             ],
         ), retrieved_context)
 
@@ -74,70 +83,31 @@ class AppraisalStage(EnrichedStage):
         perception: PerceptionResult,
         retrieved_context: RetrievedContext,
     ) -> tuple[AppraisalResult, EmotionResult]:
+        prior_context = retrieved_context.combined_context
         return self.enrichment.run(
             stage_name="AppraisalStage", initial_context=initial_context, context=retrieved_context,
             build_prompt=lambda: self.get_prompt(initial_context, perception, retrieved_context),
-            parse_result=self.parse_result,
+            parse_result=lambda payload, response, prompt: self.parse_result(payload, response, prompt, perception.raw_prompt),
+            retrieval_topics=True,
+            build_refinement_prompt=lambda: self.get_refinement_prompt(initial_context, perception, prior_context),
+            refinement_system_prompt=self.REFINEMENT_SYSTEM_PROMPT,
         )
 
-    def parse_result(self, parsed_response, response, stage_prompt):
-        if not isinstance(parsed_response.get("appraisal"), dict) or not isinstance(parsed_response.get("emotion"), dict):
-            raise ValueError("Appraisal requires appraisal and emotion objects")
-        appraisal_payload = self.read_dict(parsed_response.get("appraisal"))
-        emotion_payload = self.read_dict(parsed_response.get("emotion"))
-        attribution_payload = self.read_dict(appraisal_payload.get("attribution"))
-        for payload, key in ((appraisal_payload, "summary"), (emotion_payload, "primary"), (attribution_payload, "source")):
-            if not isinstance(payload.get(key), str) or not payload[key].strip():
-                raise ValueError(f"Appraisal requires a nonblank {key}")
-        secondary = emotion_payload.get("secondary")
-        if not isinstance(secondary, list) or not all(isinstance(item, str) and item.strip() for item in secondary):
-            raise ValueError("Emotion secondary must be a list of nonblank strings")
-        for payload, key, minimum in [
-            *((appraisal_payload, key, 0) for key in ("relevance", "threat", "control")),
-            *((appraisal_payload, key, -1) for key in ("valence", "goal_impact", "social_self_impact")),
-            (emotion_payload, "intensity", 0), (attribution_payload, "responsibility", 0),
-        ]:
-            value = payload.get(key)
-            if type(value) not in (int, float) or not math.isfinite(value) or not minimum <= value <= 1:
-                raise ValueError(f"Appraisal {key} must be a finite number in {minimum}..1")
-
-        appraisal = AppraisalResult(
-            relevance=self.read_float(appraisal_payload, "relevance", 0.0, 0.0, 1.0),
-            valence=self.read_float(appraisal_payload, "valence", 0.0, -1.0, 1.0),
-            goal_impact=self.read_float(appraisal_payload, "goal_impact", 0.0, -1.0, 1.0),
-            social_self_impact=self.read_float(appraisal_payload, "social_self_impact", 0.0, -1.0, 1.0),
-            threat=self.read_float(appraisal_payload, "threat", 0.0, 0.0, 1.0),
-            control=self.read_float(appraisal_payload, "control", 0.5, 0.0, 1.0),
-            attribution_source=self.read_string(attribution_payload, "source", "unknown"),
-            attribution_responsibility=self.read_float(attribution_payload, "responsibility", 0.0, 0.0, 1.0),
-            summary=self.read_string(appraisal_payload, "summary", ""),
-            stage_prompt=stage_prompt,
+    def get_refinement_prompt(self, initial_context, perception, prior_context):
+        # Omit the primary call's schema example and long instructions. The draft
+        # supplies the schema and unaffected conclusions; new evidence is appended
+        # by the shared helper. Keep complete NPC state and authoritative perception.
+        return format_prompt(
+            "Refine the NPC's personal appraisal and immediate emotion, never Perception or Strategy. "
+            "Return raw_prompt unchanged, appraisal {summary, aspects: [{aspect, evaluation}]}, "
+            "emotion {components, summary}, retrieval_topics: []. Use meaningful prose; no scores, "
+            "emotion hierarchy, conversational goals, plans or dialogue. Emotion summary is authoritative. "
+            "Retain supported draft conclusions; resolve only the missing personal context.",
+            [("Previously available context", prior_context),
+             ("NPC state", json.dumps(asdict(initial_context), ensure_ascii=False)),
+             ("Finalized perception", json.dumps(asdict(perception), ensure_ascii=False))],
         )
-        emotion = EmotionResult(
-            primary=self.read_string(emotion_payload, "primary", "neutral"),
-            secondary=self.read_string_list(emotion_payload, "secondary"),
-            intensity=self.read_float(emotion_payload, "intensity", 0.0, 0.0, 1.0),
-            stage_prompt=stage_prompt,
-        )
-        return appraisal, emotion
 
-    def read_dict(self, value: Any) -> dict[str, Any]:
-        return value if isinstance(value, dict) else {}
-
-    def read_string(self, payload: dict[str, Any], key: str, default: str) -> str:
-        value = payload.get(key)
-        return str(value).strip() if isinstance(value, str) and value.strip() != "" else default
-
-    def read_string_list(self, payload: dict[str, Any], key: str) -> list[str]:
-        value = payload.get(key)
-        if not isinstance(value, list):
-            return []
-        return [str(item).strip() for item in value if str(item).strip() != ""]
-
-    def read_float(self, payload: dict[str, Any], key: str, default: float, minimum: float, maximum: float) -> float:
-        value = payload.get(key, default)
-        try:
-            parsed = float(value)
-        except (TypeError, ValueError):
-            parsed = default
-        return max(minimum, min(maximum, parsed))
+    def parse_result(self, parsed_response, response=None, stage_prompt=None, raw_prompt=None):
+        from workflow.appraisal_contract import validate_appraisal
+        return validate_appraisal(parsed_response, raw_prompt)

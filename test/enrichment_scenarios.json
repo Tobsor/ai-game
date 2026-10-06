@@ -376,20 +376,19 @@
         }
       },
       "appraisal_payload": {
-        "relevance": 0.8,
-        "valence": 0.2,
-        "goal_impact": 0.5,
-        "social_self_impact": 0,
-        "threat": 0.1,
-        "control": 0.7,
-        "attribution_source": "player",
-        "attribution_responsibility": 0.5,
-        "summary": "Tom wants the reward but needs the player to accept his terms."
+        "summary": "Tom wants the reward but needs the player to accept his terms.",
+        "aspects": [
+          {
+            "aspect": "personal_significance",
+            "evaluation": "Tom wants the reward but needs the player to accept his terms."
+          }
+        ]
       },
       "emotion_payload": {
-        "primary": "hopeful",
-        "secondary": [],
-        "intensity": 0.5
+        "components": [
+          "hopeful"
+        ],
+        "summary": "Tom feels distinct hopeful. Tom wants the reward but needs the player to accept his terms."
       }
     },
     "notes": "Strategy may ask how the player reacted to a prior appeal. Use the response to choose an approach; do not redo appraisal or perception."
@@ -443,20 +442,19 @@
         }
       },
       "appraisal_payload": {
-        "relevance": 0.8,
-        "valence": 0.2,
-        "goal_impact": 0.5,
-        "social_self_impact": 0,
-        "threat": 0.1,
-        "control": 0.7,
-        "attribution_source": "player",
-        "attribution_responsibility": 0.5,
-        "summary": "Tom wants the reward but needs the player to accept his terms."
+        "summary": "Tom wants the reward but needs the player to accept his terms.",
+        "aspects": [
+          {
+            "aspect": "personal_significance",
+            "evaluation": "Tom wants the reward but needs the player to accept his terms."
+          }
+        ]
       },
       "emotion_payload": {
-        "primary": "hopeful",
-        "secondary": [],
-        "intensity": 0.5
+        "components": [
+          "hopeful"
+        ],
+        "summary": "Tom feels distinct hopeful. Tom wants the reward but needs the player to accept his terms."
       }
     },
     "notes": "Do not repeat the unavailable question about the prior persuasion attempt. Choose an approach despite the missing information."
