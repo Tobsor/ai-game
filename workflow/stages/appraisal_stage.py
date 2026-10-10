@@ -12,6 +12,11 @@ logger = get_logger(__name__)
 
 
 class AppraisalStage(EnrichedStage):
+    GROUNDING_GUIDANCE = (
+        "Preserve the player's stance as represented by finalized Perception. Distinguish that stance from the NPC's beliefs and subjective reaction; do not turn disagreement into agreement.",
+        "Explain how each activated aspect affects the NPC's concerns. Defensive self-affirmation is not external validation; when present, explain its basis without attributing agreement to the player.",
+        "Keep appraisal summary, aspects, and emotion mutually consistent. Mixed reactions require supported reasons; derive emotions from those reasons.",
+    )
     REFINEMENT_SYSTEM_PROMPT = """Appraisal refinement
 Refine the primary Appraisal using the requested and newly retrieved NPC context.
 Treat finalized Perception as authoritative; never reinterpret the player's intent.
@@ -24,7 +29,7 @@ Return complete final JSON: unchanged raw_prompt, appraisal {summary, aspects:
 [{aspect, evaluation}]}, emotion {components, summary}, and retrieval_topics: [].
 No further retrieval is possible; preserve uncertainty where evidence is insufficient.
 Do not output stage_prompt, context_request or gap_reason.
-"""
+""" + "\n".join(GROUNDING_GUIDANCE)
 
     def get_prompt(
         self,
@@ -50,6 +55,7 @@ Do not output stage_prompt, context_request or gap_reason.
                     "\n".join([
                         "Appraisal answers what the perceived situation means for the NPC personally.",
                         "Never redo finalized Perception. Conflicting evidence may produce emotional tension or confusion without correcting it.",
+                        *self.GROUNDING_GUIDANCE,
                         "Emotion answers how the NPC feels as a result of that appraisal.",
                         "Do not create the immediate conversational goal; that belongs to the strategy stage.",
                         "Evaluate from the NPC's subjective perspective using character, beliefs, history, relationships, goals and available memories.",
@@ -57,7 +63,7 @@ Do not output stage_prompt, context_request or gap_reason.
                         "Identify only personally activated aspects; preserve mixed implications without numerical ratings or a fixed taxonomy.",
                         "Emotion summary is authoritative: describe immediate feelings, targets, tensions and relative strength naturally in prose.",
                         "Emotion components are supporting keywords, without a primary/secondary hierarchy or universal intensity.",
-                        "Identify significance, validation, opportunities or obstacles, never conversational goals, plans, actions or dialogue.",
+                        "Identify supported personal significance, including benefits, costs, tensions, and uncertainty; never conversational goals, plans, actions, or dialogue.",
                         "Request descriptive retrieval_topics only for missing personal significance context, such as prior promises or current motivations.",
                         "Never retrieve to reinterpret player intent or decide how to exploit the situation; Perception is authoritative and Strategy decides behavior.",
                     ]),
@@ -68,7 +74,7 @@ Do not output stage_prompt, context_request or gap_reason.
                         "{",
                         '  "raw_prompt": "exact original player input",',
                         '  "appraisal": {"summary": "personal significance", "aspects": [{"aspect": "self_image", "evaluation": "contextual personal meaning"}]},',
-                        '  "emotion": {"components": ["pleased", "proud"], "summary": "immediate emotional consequence in contextual prose"},',
+                        '  "emotion": {"components": ["emotion keyword"], "summary": "immediate emotional consequence in contextual prose"},',
                         '  "retrieval_topics": []',
                         "}",
                     ]),
@@ -102,7 +108,7 @@ Do not output stage_prompt, context_request or gap_reason.
             "Return raw_prompt unchanged, appraisal {summary, aspects: [{aspect, evaluation}]}, "
             "emotion {components, summary}, retrieval_topics: []. Use meaningful prose; no scores, "
             "emotion hierarchy, conversational goals, plans or dialogue. Emotion summary is authoritative. "
-            "Retain supported draft conclusions; resolve only the missing personal context.",
+            "Retain supported draft conclusions; resolve missing personal context and internal appraisal contradictions without reopening finalized Perception.",
             [("Previously available context", prior_context),
              ("NPC state", json.dumps(asdict(initial_context), ensure_ascii=False)),
              ("Finalized perception", json.dumps(asdict(perception), ensure_ascii=False))],
