@@ -1,0 +1,6 @@
+{
+  "entity_id": "location-rack",
+  "name": "Rack",
+  "type": "location",
+  "faction": "raccoon"
+}

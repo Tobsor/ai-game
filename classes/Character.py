@@ -199,8 +199,8 @@ class Character:
     def get_sentiment_filter(self):
         return self.get_character_category_filter(MetadataCategory.SENTIMENT)
 
-    def get_character_category_filter(self, category: MetadataCategory):
-        return {
+    def get_character_category_filter(self, category: MetadataCategory, subcategory: str | None = None):
+        result = {
             "$and": [
                 {
                     "name": self.name,
@@ -214,14 +214,18 @@ class Character:
             ]
         }
 
+        if subcategory:
+            result["$and"].append({"subcategory": subcategory})
+        return result
+
     def get_sentiment(self):
         documents = self.get_character_documents(MetadataCategory.SENTIMENT, limit=3)
         sentiment_entries = [str(doc).strip() for doc in reversed(documents) if str(doc).strip()]
         return "\n".join(sentiment_entries)
 
-    def get_character_documents(self, category: MetadataCategory, limit: int | None = None) -> list[str]:
+    def get_character_documents(self, category: MetadataCategory, limit: int | None = None, *, subcategory: str | None = None) -> list[str]:
         kwargs: dict[str, Any] = {
-            "where": self.get_character_category_filter(category),
+            "where": self.get_character_category_filter(category, subcategory),
             "include": ["documents"],
         }
         if limit is not None:
@@ -247,7 +251,7 @@ class Character:
                     "faction": self.faction.value,
                 },
                 {
-                    "type": MetadataCategory.LORE.value
+                    "type": MetadataType.FACTION.value
                 }
             ]
         }

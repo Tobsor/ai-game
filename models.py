@@ -17,6 +17,7 @@ class Faction(Enum):
 class MetadataType(Enum):
     FACTION = "faction"
     CHARACTER = "character"
+    LORE = "lore"
 
 class PromptCategory(Enum):
     GENERAL = "general"
@@ -83,6 +84,7 @@ class Metadata(BaseModel):
     name: Optional[str] = None
     type: Optional[MetadataType] = None
     category: Optional[MetadataCategory] = None
+    subcategory: Optional[str] = None
 
 class TestPrompt(BaseModel):
     user_query: str

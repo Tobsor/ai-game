@@ -3,6 +3,7 @@ from models import Metadata
 from typing import Any
 from ai import AISettings, create_chat_provider, create_embedding_provider, get_ai_settings
 from logger import get_logger
+from embedding_text import format_embedding_text
 
 logger = get_logger(__name__)
 
@@ -44,6 +45,10 @@ class ChromaDBHelper:
         self.response_context_initialized = True
     
     def add_embedding(self, id: str, text: str, metadata: Metadata | dict[str, Any] | None):
+        """Accept raw document text; persist and embed the same metadata-prefixed text."""
+        if isinstance(metadata, Metadata):
+            metadata = metadata.model_dump(mode="json", exclude_none=True)
+        text = format_embedding_text(text, metadata)
         embedding = self.get_embedding(text)
 
         kwargs = {
@@ -52,11 +57,8 @@ class ChromaDBHelper:
             "embeddings":embedding,
         }
 
-        if metadata is not None:
-            if isinstance(metadata, Metadata):
-                kwargs["metadatas"] = [metadata.model_dump(mode="json", exclude_none=True)]
-            else:
-                kwargs["metadatas"] = [metadata]
+        if metadata:
+            kwargs["metadatas"] = [metadata]
 
         self.db.upsert(**kwargs)
 

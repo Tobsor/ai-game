@@ -1,4 +1,4 @@
-import csv
+from data_ingestion import load_characters as load_character_records
 import os
 from pathlib import Path
 import argparse
@@ -14,7 +14,7 @@ from classes.Character import Character
 from logger import configure_logging, get_logger
 
 APP_ROOT = Path(__file__).resolve().parent
-CHARACTER_CSV = APP_ROOT / "data" / "character_data_cop.csv"
+CHARACTER_CSV = APP_ROOT / "data" / "character_data.csv"
 DEFAULT_SITUATION = (
     "{{user}} enters the village of Rack and stumbles upon {{char}}. "
     "{{char}} initiates the contact to {{user}}"
@@ -29,9 +29,7 @@ def load_characters(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         return []
 
-    with path.open(mode="r", newline="", encoding="utf-8") as file:
-        reader = csv.DictReader(file, delimiter=";")
-        return [row for row in reader]
+    return load_character_records(path)
 
 
 CHARACTERS = load_characters(CHARACTER_CSV)

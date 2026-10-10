@@ -9,6 +9,7 @@ from classes.Character import Character
 from logger import configure_logging, get_logger
 from models import PromptCategory, StageExpectationMode, StageName, StageTestPrompt
 from test.AgentTest import AgentTest
+from data_ingestion import DATA_ROOT, load_characters
 
 
 situation = "{{user}} enters the village of Rack and stumbles upon {{char}}. {{char}} initiates the contact to {{user}}"
@@ -71,10 +72,7 @@ def read_characters(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         raise FileNotFoundError(f"Character CSV not found: {path}")
 
-    with path.open(mode="r", encoding="utf-8") as file:
-        csv_file = csv.DictReader(file, delimiter=";")
-        logger.info("Retrieved factions")
-        return list(csv_file)
+    return load_characters(path)
 
 
 def stage_prompt_path_for(character: Character, data_dir: Path) -> Path:
@@ -204,7 +202,7 @@ if __name__ == "__main__":
     parser.add_argument("--character", help="Character name; otherwise select interactively")
     parser.add_argument("--stage", help="Cognitive stage name or 'All stages'")
     args = parser.parse_args()
-    all_characters = read_characters(Path("./data/character_data_cop.csv"))
+    all_characters = read_characters(DATA_ROOT / "character_data.csv")
     selected_character = select_character(all_characters, args.character)
     npc = Character(selected_character, situation)
     test_agent(npc, args.stage, args.suite)

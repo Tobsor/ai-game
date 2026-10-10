@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import Any
+from embedding_text import format_embedding_text
 
 
 def create_test_embedding(db: Any, document: str) -> list[float]:
@@ -19,6 +20,7 @@ def create_test_embeddings(db: Any, entries: list[dict[str, Any]]) -> dict[str, 
     ids = [str(entry["id"]) for entry in normalized_entries]
     documents = [str(entry["document"]).strip() for entry in normalized_entries]
     metadatas = [dict(entry.get("metadata") or {}) for entry in normalized_entries]
+    documents = [format_embedding_text(document, metadata) for document, metadata in zip(documents, metadatas)]
     embeddings = [create_test_embedding(db, document) for document in documents]
 
     db.db.upsert(

@@ -1,9 +1,7 @@
-from add_faction_embeddings import add_faction_embeddings
-from add_character_embeddings import add_character_embeddings
+from sync_data import run
 
 def main():
-    add_faction_embeddings()
-    add_character_embeddings()
+    run(sync_embeddings=True)
 
 if __name__ == "__main__":
     main()

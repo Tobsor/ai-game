@@ -1,4 +1,4 @@
-import csv
+from data_ingestion import load_characters
 import keyboard
 from classes.Character import Character
 from logger import configure_logging, get_logger
@@ -27,19 +27,13 @@ def up():
 
 def down():
     global selected
-    if selected == 4:
+    if selected >= len(all_characters) - 1:
         selected = 0
     else:
         selected += 1
     show_menu()    
 
-with open('./data/character_data_cop.csv', mode ='r') as file:
-        csvFile = csv.DictReader(file, delimiter=';')
-
-        logger.info("Retrieved factions")
-
-        for character in csvFile:
-            all_characters.append(character)
+all_characters = load_characters()
 show_menu()
 
 loop = True
