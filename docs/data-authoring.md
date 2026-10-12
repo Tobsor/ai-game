@@ -152,19 +152,16 @@ set through this implementation. Do not use them with an incomplete source subse
 
 ## Completed migration and active sources
 
-The one-time migration has been completed and its script retired. Original Word files and
-CSV data were retained, with backups under `data/backups`. CSV-only information was converted
-into Word documents during that migration; normal imports only read Word files.
+The one-time migration has been completed and its script retired. Obsolete source directories,
+old CSVs, migration reports, and backups have been removed. CSV-only information was converted
+into Word documents during migration; normal imports only read Word files.
 
-Inspect `data/migration_report.json` for differences, fallbacks, and unused legacy files.
 Synchronization no longer recognizes or cleans up old migration seeds. It only removes
 obsolete records marked as belonging to the current importer.
-Source documents, CSVs, reports, and backups remain local under the existing Git
+Source documents, generated CSVs, and test data remain local under the existing Git
 ignore rules. Code, documentation, and reusable templates are tracked.
 
-The active authoring tree is **only `data/sources`**. The old `data/character_data` and
-`data/faction_data` directories were intentionally retained as pre-migration originals.
-Editing those originals does not update the generated CSVs or embeddings. Manifests live
+The active authoring tree is **only `data/sources`**. Manifests live
 inside each entity folder, for example `data/sources/characters/tom/entity.json`.
 For a new entity, copy the supplied manifest and Word templates into this active tree.
 
